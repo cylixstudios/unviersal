@@ -30,7 +30,8 @@ local State = {
         FOVSize = 200,
         SmoothnessX = 5,
         SmoothnessY = 5,
-        TargetPart = "Head", -- "Head", "Torso", "HumanoidRootPart"
+        TargetPart = "Head", -- "Head", "Body", "Torso", "HumanoidRootPart", "Closest"
+        BodyPriority = false,
         Active = false
     },
     ESP = {
@@ -283,23 +284,84 @@ end
 -- Resolve Target Hitbox Part based on Rig and User Selection
 local function GetHitboxPart(char, partSetting)
     if not char then return nil end
+    partSetting = partSetting or State.Aimbot.TargetPart
+    if State.Aimbot.BodyPriority and partSetting == "Head" then
+        partSetting = "Body"
+    end
+
     if partSetting == "Head" then
         return char:FindFirstChild("Head")
+    elseif partSetting == "Body" then
+        return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("LowerTorso") or char:FindFirstChild("HumanoidRootPart")
     elseif partSetting == "Torso" then
         return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("LowerTorso")
     elseif partSetting == "HumanoidRootPart" then
         return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+    elseif partSetting == "Closest" then
+        local candidates = {
+            char:FindFirstChild("Head"),
+            char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"),
+            char:FindFirstChild("LowerTorso"),
+            char:FindFirstChild("HumanoidRootPart"),
+            char:FindFirstChild("RightUpperArm") or char:FindFirstChild("Right Arm"),
+            char:FindFirstChild("LeftUpperArm") or char:FindFirstChild("Left Arm")
+        }
+        local mousePos = Services.UserInputService:GetMouseLocation()
+        local bestP = nil
+        local bestD = math.huge
+        for _, p in ipairs(candidates) do
+            if p and p:IsA("BasePart") then
+                local sPos, onScr = Camera:WorldToViewportPoint(p.Position)
+                if onScr then
+                    local d = (Vector2.new(sPos.X, sPos.Y) - mousePos).Magnitude
+                    if d < bestD then
+                        bestD = d
+                        bestP = p
+                    end
+                end
+            end
+        end
+        return bestP or char:FindFirstChild("Head") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("HumanoidRootPart")
     end
-    return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+    return char:FindFirstChild("Head") or char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("HumanoidRootPart")
 end
 
--- Target Acquisition
+local LockedTarget = nil
+
+-- Target Acquisition with Target Locking
 local function GetClosestTarget()
+    -- Check if locked target is still valid and tracking
+    if LockedTarget and LockedTarget.Player and LockedTarget.Player.Parent then
+        local char = LockedTarget.Player.Character
+        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+        local targetPart = char and GetHitboxPart(char, State.Aimbot.TargetPart)
+
+        if humanoid and humanoid.Health > 0 and targetPart then
+            local isTeammate = State.Aimbot.TeamCheck and IsTeammate(LockedTarget.Player)
+            local isOccluded = State.Aimbot.WallCheck and not IsVisible(targetPart)
+
+            if not isTeammate and not isOccluded then
+                local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
+                local mousePos = Services.UserInputService:GetMouseLocation()
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+
+                -- Keep lock if target is on screen and within 1.7x FOV tolerance during jumps
+                if onScreen and dist <= (State.Aimbot.FOVSize * 1.7) then
+                    return {
+                        Player = LockedTarget.Player,
+                        Part = targetPart,
+                        Position = targetPart.Position,
+                        Velocity = targetPart.AssemblyLinearVelocity or Vector3.zero
+                    }
+                end
+            end
+        end
+    end
+
+    LockedTarget = nil
     local bestTarget = nil
     local shortestDist = State.Aimbot.FOVSize
-
     local mousePos = Services.UserInputService:GetMouseLocation()
-    local screenCenter = Vector2.new(mousePos.X, mousePos.Y)
 
     for _, player in ipairs(Services.Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character then
@@ -312,7 +374,7 @@ local function GetClosestTarget()
                     if not (State.Aimbot.WallCheck and not IsVisible(targetPart)) then
                         local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
                         if onScreen then
-                            local dist = (Vector2.new(screenPos.X, screenPos.Y) - screenCenter).Magnitude
+                            local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
                             if dist < shortestDist then
                                 shortestDist = dist
                                 bestTarget = {
@@ -329,44 +391,65 @@ local function GetClosestTarget()
         end
     end
 
+    LockedTarget = bestTarget
     return bestTarget
 end
 
--- Targeting Execution Step (Calibrated to eliminate jump jitter with fromOrientation)
+-- Targeting Execution Step (Smooth, jump-proof, orientation interpolation)
 local function StepTargeting()
     local shouldAim = State.Aimbot.Enabled and (
         State.Aimbot.Keybind == Enum.KeyCode.Unknown or State.Aimbot.Active
     )
-    if not shouldAim then return end
+    if not shouldAim then
+        LockedTarget = nil
+        return
+    end
 
     local target = GetClosestTarget()
     if target and target.Part then
-        local aimPos = target.Position
-        if State.Aimbot.UsePrediction and target.Velocity then
-            local vel = target.Velocity
+        local aimPos = target.Part.Position
+
+        local myChar = LocalPlayer.Character
+        local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+        local myVel = myRoot and myRoot.AssemblyLinearVelocity or Vector3.zero
+        local targetVel = target.Velocity or Vector3.zero
+
+        -- Jump-proof velocity compensation with relative motion
+        if State.Aimbot.UsePrediction then
+            local pred = State.Aimbot.PredictionValue * 0.015
+            local relVelX = targetVel.X - (myVel.X * 0.3)
+            local relVelY = math.clamp(targetVel.Y - (myVel.Y * 0.3), -25, 25)
+            local relVelZ = targetVel.Z - (myVel.Z * 0.3)
             aimPos = aimPos + Vector3.new(
-                vel.X * (State.Aimbot.PredictionValue * 0.015),
-                vel.Y * (State.Aimbot.PredictionValue * 0.012),
-                vel.Z * (State.Aimbot.PredictionValue * 0.015)
+                relVelX * pred,
+                relVelY * (pred * 0.5),
+                relVelZ * pred
             )
         end
 
-        local currentCFrame = Camera.CFrame
-        local targetCFrame = CFrame.new(currentCFrame.Position, aimPos)
+        local currentCF = Camera.CFrame
+        local targetCF = CFrame.lookAt(currentCF.Position, aimPos)
 
-        local currentX, currentY, _ = currentCFrame:ToOrientation()
-        local targetX, targetY, _ = targetCFrame:ToOrientation()
+        local currentPitch, currentYaw, _ = currentCF:ToOrientation()
+        local targetPitch, targetYaw, _ = targetCF:ToOrientation()
 
-        local deltaY = AngleDelta(targetY, currentY)
-        local deltaX = AngleDelta(targetX, currentX)
+        local deltaYaw = AngleDelta(targetYaw, currentYaw)
+        local deltaPitch = targetPitch - currentPitch
 
-        local smoothXFactor = math.clamp(1 / math.max(State.Aimbot.SmoothnessX, 1), 0.02, 1)
-        local smoothYFactor = math.clamp(1 / math.max(State.Aimbot.SmoothnessY, 1), 0.02, 1)
+        -- Detect jump/airborne state from either local player or target
+        local isJumping = (math.abs(myVel.Y) > 3) or (math.abs(targetVel.Y) > 3)
 
-        local newY = currentY + (deltaY * smoothXFactor)
-        local newX = math.clamp(currentX + (deltaX * smoothYFactor), math.rad(-88), math.rad(88))
+        local smoothX = math.max(State.Aimbot.SmoothnessX, 1)
+        local smoothY = math.max(State.Aimbot.SmoothnessY, 1)
 
-        Camera.CFrame = CFrame.new(currentCFrame.Position) * CFrame.fromOrientation(newX, newY, 0)
+        local factorX = math.clamp(1 / smoothX, 0.04, 1)
+        -- In airborne/jump states, elevate vertical responsiveness so camera tracks smoothly without lag or overshooting
+        local factorY = isJumping and math.clamp((1 / smoothY) * 2.4, 0.12, 1) or math.clamp(1 / smoothY, 0.04, 1)
+
+        local newYaw = currentYaw + (deltaYaw * factorX)
+        local newPitch = math.clamp(currentPitch + (deltaPitch * factorY), math.rad(-88), math.rad(88))
+
+        Camera.CFrame = CFrame.new(currentCF.Position) * CFrame.fromOrientation(newPitch, newYaw, 0)
     end
 end
 
@@ -1192,11 +1275,11 @@ local function BuildSaviorInterface()
     end
 
     -- Helper: Keybind & Master Switch Row
-    local function CreateMasterRow(parent, defaultKey, onKeybindChanged, defaultActive, onToggleChanged)
+    local function CreateMasterRow(parent, defaultKey, onKeybindChanged, defaultActive, onToggleChanged, layoutOrder)
         local Row = Instance.new("Frame")
         Row.Size = UDim2.new(1, 0, 0, 32)
         Row.BackgroundTransparency = 1
-        Row.LayoutOrder = 1
+        Row.LayoutOrder = layoutOrder or 1
         Row.Parent = parent
 
         local KeyBtn = Instance.new("TextButton")
@@ -1324,14 +1407,15 @@ local function BuildSaviorInterface()
     end
 
     -- Helper Component: Hitbox / Part Selector Row (Cycle Pill)
-    local function CreateSelectorRow(parent, name, options, defaultSelected, onSelectChanged)
+    local function CreateSelectorRow(parent, name, options, defaultSelected, onSelectChanged, layoutOrder)
         local Row = Instance.new("Frame")
         Row.Size = UDim2.new(1, 0, 0, 30)
         Row.BackgroundTransparency = 1
+        Row.LayoutOrder = layoutOrder or 2
         Row.Parent = parent
 
         local Label = Instance.new("TextLabel")
-        Label.Size = UDim2.new(1, -120, 1, 0)
+        Label.Size = UDim2.new(1, -130, 1, 0)
         Label.Position = UDim2.new(0, 0, 0, 0)
         Label.BackgroundTransparency = 1
         Label.Text = name
@@ -1342,8 +1426,8 @@ local function BuildSaviorInterface()
         Label.Parent = Row
 
         local CycleBtn = Instance.new("TextButton")
-        CycleBtn.Size = UDim2.new(0, 110, 0, 22)
-        CycleBtn.Position = UDim2.new(1, -110, 0.5, -11)
+        CycleBtn.Size = UDim2.new(0, 120, 0, 24)
+        CycleBtn.Position = UDim2.new(1, -120, 0.5, -12)
         CycleBtn.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
         CycleBtn.BorderSizePixel = 0
         CycleBtn.Text = ""
@@ -1360,7 +1444,7 @@ local function BuildSaviorInterface()
         CStroke.Parent = CycleBtn
 
         local CycleText = Instance.new("TextLabel")
-        CycleText.Size = UDim2.new(1, -18, 1, 0)
+        CycleText.Size = UDim2.new(1, -22, 1, 0)
         CycleText.Position = UDim2.new(0, 8, 0, 0)
         CycleText.BackgroundTransparency = 1
         CycleText.Text = defaultSelected
@@ -1403,10 +1487,11 @@ local function BuildSaviorInterface()
     end
 
     -- Helper Component: Toggle Row with Animation Fades
-    local function CreateToggleRow(parent, name, hasSubmenu, defaultActive, onToggleChanged, onSubmenuClicked)
+    local function CreateToggleRow(parent, name, hasSubmenu, defaultActive, onToggleChanged, onSubmenuClicked, layoutOrder)
         local Row = Instance.new("Frame")
         Row.Size = UDim2.new(1, 0, 0, 28)
         Row.BackgroundTransparency = 1
+        Row.LayoutOrder = layoutOrder or 3
         Row.Parent = parent
 
         local Label = Instance.new("TextLabel")
@@ -1495,10 +1580,11 @@ local function BuildSaviorInterface()
     end
 
     -- Helper Component: Slider Row with Global Dragging
-    local function CreateSliderRow(parent, name, minVal, maxVal, defaultVal, onValueChanged)
+    local function CreateSliderRow(parent, name, minVal, maxVal, defaultVal, onValueChanged, layoutOrder)
         local Container = Instance.new("Frame")
         Container.Size = UDim2.new(1, 0, 0, 42)
         Container.BackgroundTransparency = 1
+        Container.LayoutOrder = layoutOrder or 4
         Container.Parent = parent
 
         local Title = Instance.new("TextLabel")
@@ -1887,125 +1973,138 @@ local function BuildSaviorInterface()
     -- TAB 1: MAIN PAGE (Aimbot Controls & ESP Visuals)
     -- ==============================================================================
     local AimCard = CreateCard(MainPageView, "Aimbot Controls", "Configure aim bot settings", 1)
+    local aimOrder = 0
+    local function NextAim() aimOrder = aimOrder + 1; return aimOrder end
+
     CreateMasterRow(AimCard, State.Aimbot.Keybind, function(newKey)
         State.Aimbot.Keybind = newKey
     end, State.Aimbot.Enabled, function(val)
         State.Aimbot.Enabled = val
-    end)
+    end, NextAim())
 
-    CreateSelectorRow(AimCard, "Target Hitbox", {"Head", "Torso", "HumanoidRootPart"}, State.Aimbot.TargetPart, function(selected)
+    CreateSelectorRow(AimCard, "Target Hitbox", {"Head", "Body", "Torso", "HumanoidRootPart", "Closest"}, State.Aimbot.TargetPart, function(selected)
         State.Aimbot.TargetPart = selected
         ShowToast("Target Hitbox set to: " .. selected)
-    end)
+    end, NextAim())
+
+    CreateToggleRow(AimCard, "Prioritize Body", false, State.Aimbot.BodyPriority, function(val)
+        State.Aimbot.BodyPriority = val
+        ShowToast(val and "Body targeting prioritized" or "Default hitbox prioritized")
+    end, nil, NextAim())
 
     CreateToggleRow(AimCard, "Team Check", true, State.Aimbot.TeamCheck, function(val)
         State.Aimbot.TeamCheck = val
-    end)
+    end, nil, NextAim())
 
     CreateToggleRow(AimCard, "Wall Check", true, State.Aimbot.WallCheck, function(val)
         State.Aimbot.WallCheck = val
-    end)
+    end, nil, NextAim())
 
     CreateToggleRow(AimCard, "Use Prediction", true, State.Aimbot.UsePrediction, function(val)
         State.Aimbot.UsePrediction = val
-    end)
+    end, nil, NextAim())
 
     CreateSliderRow(AimCard, "Prediction Value", 0, 10, State.Aimbot.PredictionValue, function(val)
         State.Aimbot.PredictionValue = val
-    end)
+    end, NextAim())
 
     CreateSliderRow(AimCard, "FOV Size", 0, 800, State.Aimbot.FOVSize, function(val)
         State.Aimbot.FOVSize = val
-    end)
+    end, NextAim())
 
     CreateSliderRow(AimCard, "Horizontal Smoothing", 1, 30, State.Aimbot.SmoothnessX, function(val)
         State.Aimbot.SmoothnessX = val
-    end)
+    end, NextAim())
 
     CreateSliderRow(AimCard, "Vertical Smoothing", 1, 30, State.Aimbot.SmoothnessY, function(val)
         State.Aimbot.SmoothnessY = val
-    end)
+    end, NextAim())
 
     local ESPCard = CreateCard(MainPageView, "ESP Visuals", "Configure ESP settings", 2)
+    local espOrder = 0
+    local function NextESP() espOrder = espOrder + 1; return espOrder end
+
     CreateMasterRow(ESPCard, State.ESP.Keybind, function(newKey)
         State.ESP.Keybind = newKey
     end, State.ESP.Enabled, function(val)
         State.ESP.Enabled = val
         TogglePreview(val)
-    end)
+    end, NextESP())
 
     CreateToggleRow(ESPCard, "Box ESP", true, State.ESP.Box, function(val)
         State.ESP.Box = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Name ESP", true, State.ESP.Name, function(val)
         State.ESP.Name = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Distance ESP", true, State.ESP.Distance, function(val)
         State.ESP.Distance = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Skeleton ESP", true, State.ESP.Skeleton, function(val)
         State.ESP.Skeleton = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Health Text ESP", true, State.ESP.HealthText, function(val)
         State.ESP.HealthText = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Health Bar ESP", true, State.ESP.HealthBar, function(val)
         State.ESP.HealthBar = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Tracer ESP", true, State.ESP.Tracer, function(val)
         State.ESP.Tracer = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Chams", true, State.ESP.Chams, function(val)
         State.ESP.Chams = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Team Check", true, State.ESP.TeamCheck, function(val)
         State.ESP.TeamCheck = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Show Self / LocalPlayer", false, State.ESP.ShowSelf, function(val)
         State.ESP.ShowSelf = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Rainbow Visuals", false, State.ESP.Rainbow, function(val)
         State.ESP.Rainbow = val
         RefreshPreview()
-    end)
+    end, nil, NextESP())
 
     CreateToggleRow(ESPCard, "Radar Minimap", false, State.ESP.Radar, function(val)
         State.ESP.Radar = val
         RadarFrame.Visible = val and State.ESP.Enabled
-    end)
+    end, nil, NextESP())
 
     CreateSliderRow(ESPCard, "Radar Range", 50, 600, State.ESP.RadarRange, function(val)
         State.ESP.RadarRange = val
-    end)
+    end, NextESP())
 
     CreateSliderRow(ESPCard, "ESP Distance", 100, 5000, State.ESP.MaxDistance, function(val)
         State.ESP.MaxDistance = val
-    end)
+    end, NextESP())
 
     -- ==============================================================================
     -- TAB 2: PLAYER OPTIONS (Clean State Management)
     -- ==============================================================================
     local MovementCard = CreateCard(PlayerPageView, "Movement Modifiers", "Local character adjustments", 1)
+    local moveOrder = 0
+    local function NextMove() moveOrder = moveOrder + 1; return moveOrder end
 
     CreateToggleRow(MovementCard, "Enable WalkSpeed", false, State.Player.ModifySpeed, function(val)
         State.Player.ModifySpeed = val
@@ -2017,14 +2116,14 @@ local function BuildSaviorInterface()
                 hum.WalkSpeed = 16
             end
         end
-    end)
+    end, nil, NextMove())
 
     CreateSliderRow(MovementCard, "Walk Speed", 16, 250, State.Player.WalkSpeed, function(val)
         State.Player.WalkSpeed = val
         if State.Player.ModifySpeed and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
             LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = val
         end
-    end)
+    end, NextMove())
 
     CreateToggleRow(MovementCard, "Enable JumpPower", false, State.Player.ModifyJump, function(val)
         State.Player.ModifyJump = val
@@ -2038,7 +2137,7 @@ local function BuildSaviorInterface()
                 hum.UseJumpPower = false
             end
         end
-    end)
+    end, nil, NextMove())
 
     CreateSliderRow(MovementCard, "Jump Power", 50, 300, State.Player.JumpPower, function(val)
         State.Player.JumpPower = val
@@ -2047,7 +2146,7 @@ local function BuildSaviorInterface()
             hum.UseJumpPower = true
             hum.JumpPower = val
         end
-    end)
+    end, NextMove())
 
     CreateToggleRow(MovementCard, "Enable Custom FOV", false, State.Player.ModifyFOV, function(val)
         State.Player.ModifyFOV = val
@@ -2056,14 +2155,14 @@ local function BuildSaviorInterface()
         else
             Camera.FieldOfView = 70
         end
-    end)
+    end, nil, NextMove())
 
     CreateSliderRow(MovementCard, "Field of View", 60, 120, State.Player.FieldOfView, function(val)
         State.Player.FieldOfView = val
         if State.Player.ModifyFOV then
             Camera.FieldOfView = val
         end
-    end)
+    end, NextMove())
 
     local PlayerConn = Services.RunService.RenderStepped:Connect(function()
         if LocalPlayer.Character then
@@ -2090,6 +2189,7 @@ local function BuildSaviorInterface()
     TpContainer.Size = UDim2.new(1, 0, 0, 94)
     TpContainer.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
     TpContainer.BorderSizePixel = 0
+    TpContainer.LayoutOrder = 1
     TpContainer.Parent = TeleportCard
 
     local TpCorner = Instance.new("UICorner")
@@ -2144,6 +2244,7 @@ local function BuildSaviorInterface()
     TpExecBtn.TextSize = 12
     TpExecBtn.TextColor3 = Color3.fromRGB(10, 10, 10)
     TpExecBtn.AutoButtonColor = false
+    TpExecBtn.LayoutOrder = 2
     TpExecBtn.Parent = TeleportCard
 
     local TpBtnCorner = Instance.new("UICorner")
@@ -2183,114 +2284,233 @@ local function BuildSaviorInterface()
     end)
 
     -- ==============================================================================
-    -- TAB 3: SETTINGS (Polished Cards + Unload Utility)
+    -- TAB 3: SETTINGS (Polished Function Boxes + System Management)
     -- ==============================================================================
-    local CommunityCard = CreateCard(SettingsPageView, "Community Links", "Official socials & updates", 1)
+    local InterfaceCard = CreateCard(SettingsPageView, "Interface & Socials", "Hub customization and official links", 1)
+    local SystemCard = CreateCard(SettingsPageView, "Session Management", "Runtime session controls & tools", 2)
 
-    local function CreateSocialCard(parent, title, subtitle, iconId, badgeText, onClick)
-        local Sc = Instance.new("Frame")
-        Sc.Size = UDim2.new(1, 0, 0, 48)
-        Sc.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-        Sc.BorderSizePixel = 0
-        Sc.Parent = parent
+    local function CreateFunctionBox(parent, title, subtitle, iconId, layoutOrder)
+        local Box = Instance.new("Frame")
+        Box.Size = UDim2.new(1, 0, 0, 56)
+        Box.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+        Box.BorderSizePixel = 0
+        Box.LayoutOrder = layoutOrder or 1
+        Box.Parent = parent
 
-        local ScCorner = Instance.new("UICorner")
-        ScCorner.CornerRadius = UDim.new(0, 10)
-        ScCorner.Parent = Sc
+        local BCorner = Instance.new("UICorner")
+        BCorner.CornerRadius = UDim.new(0, 10)
+        BCorner.Parent = Box
 
-        local ScStroke = Instance.new("UIStroke")
-        ScStroke.Color = Color3.fromRGB(28, 28, 28)
-        ScStroke.Thickness = 1
-        ScStroke.Parent = Sc
+        local BStroke = Instance.new("UIStroke")
+        BStroke.Color = Color3.fromRGB(28, 28, 28)
+        BStroke.Thickness = 1
+        BStroke.Parent = Box
+
+        local IconBadge = Instance.new("Frame")
+        IconBadge.Size = UDim2.new(0, 32, 0, 32)
+        IconBadge.Position = UDim2.new(0, 12, 0.5, -16)
+        IconBadge.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+        IconBadge.BorderSizePixel = 0
+        IconBadge.Parent = Box
+
+        local IbCorner = Instance.new("UICorner")
+        IbCorner.CornerRadius = UDim.new(0, 8)
+        IbCorner.Parent = IconBadge
 
         local Icon = Instance.new("ImageLabel")
-        Icon.Size = UDim2.new(0, 20, 0, 20)
-        Icon.Position = UDim2.new(0, 12, 0.5, -10)
+        Icon.Size = UDim2.new(0, 18, 0, 18)
+        Icon.Position = UDim2.new(0.5, -9, 0.5, -9)
         Icon.BackgroundTransparency = 1
         Icon.Image = iconId
-        Icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
-        Icon.Parent = Sc
+        Icon.ImageColor3 = Color3.fromRGB(240, 240, 240)
+        Icon.Parent = IconBadge
 
         local TitleL = Instance.new("TextLabel")
-        TitleL.Size = UDim2.new(1, -120, 0, 18)
-        TitleL.Position = UDim2.new(0, 40, 0, 6)
+        TitleL.Size = UDim2.new(1, -170, 0, 18)
+        TitleL.Position = UDim2.new(0, 52, 0, 10)
         TitleL.BackgroundTransparency = 1
         TitleL.Text = title
         TitleL.Font = Enum.Font.GothamBold
         TitleL.TextSize = 12
-        TitleL.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleL.TextColor3 = Color3.fromRGB(245, 245, 245)
         TitleL.TextXAlignment = Enum.TextXAlignment.Left
-        TitleL.Parent = Sc
+        TitleL.Parent = Box
 
         local SubL = Instance.new("TextLabel")
-        SubL.Size = UDim2.new(1, -120, 0, 14)
-        SubL.Position = UDim2.new(0, 40, 0, 24)
+        SubL.Size = UDim2.new(1, -170, 0, 16)
+        SubL.Position = UDim2.new(0, 52, 0, 28)
         SubL.BackgroundTransparency = 1
         SubL.Text = subtitle
         SubL.Font = Enum.Font.Gotham
         SubL.TextSize = 10
         SubL.TextColor3 = Color3.fromRGB(130, 130, 130)
         SubL.TextXAlignment = Enum.TextXAlignment.Left
-        SubL.Parent = Sc
+        SubL.Parent = Box
 
-        local ActionBtn = Instance.new("TextButton")
-        ActionBtn.Size = UDim2.new(0, 60, 0, 26)
-        ActionBtn.Position = UDim2.new(1, -70, 0.5, -13)
-        ActionBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
-        ActionBtn.BorderSizePixel = 0
-        ActionBtn.Text = badgeText
-        ActionBtn.Font = Enum.Font.GothamBold
-        ActionBtn.TextSize = 11
-        ActionBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        ActionBtn.AutoButtonColor = false
-        ActionBtn.Parent = Sc
-
-        local ACorner = Instance.new("UICorner")
-        ACorner.CornerRadius = UDim.new(1, 0)
-        ACorner.Parent = ActionBtn
-
-        local AStroke = Instance.new("UIStroke")
-        AStroke.Color = Color3.fromRGB(40, 40, 40)
-        AStroke.Thickness = 1
-        AStroke.Parent = ActionBtn
-
-        ActionBtn.MouseEnter:Connect(function()
-            Services.TweenService:Create(ActionBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(10, 10, 10)}):Play()
-        end)
-        ActionBtn.MouseLeave:Connect(function()
-            Services.TweenService:Create(ActionBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
-        end)
-
-        ActionBtn.MouseButton1Click:Connect(onClick)
+        return Box
     end
 
-    CreateSocialCard(CommunityCard, "Discord Community", "Copy server invite link", "rbxassetid://6031075931", "Join", function()
+    -- 1. Menu Keybind Box
+    local MenuKeyBox = CreateFunctionBox(InterfaceCard, "Menu Keybind", "Key to toggle hub visibility", "rbxassetid://6031265976", 1)
+    local MKeyBtn = Instance.new("TextButton")
+    MKeyBtn.Size = UDim2.new(0, 84, 0, 26)
+    MKeyBtn.Position = UDim2.new(1, -94, 0.5, -13)
+    MKeyBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    MKeyBtn.BorderSizePixel = 0
+    MKeyBtn.Text = State.UI.ToggleKey.Name
+    MKeyBtn.Font = Enum.Font.GothamBold
+    MKeyBtn.TextSize = 11
+    MKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MKeyBtn.AutoButtonColor = false
+    MKeyBtn.Parent = MenuKeyBox
+
+    local MkCorner = Instance.new("UICorner")
+    MkCorner.CornerRadius = UDim.new(0, 6)
+    MkCorner.Parent = MKeyBtn
+
+    local MkStroke = Instance.new("UIStroke")
+    MkStroke.Color = Color3.fromRGB(40, 40, 40)
+    MkStroke.Thickness = 1
+    MkStroke.Parent = MKeyBtn
+
+    local mListening = false
+    MKeyBtn.MouseButton1Click:Connect(function()
+        mListening = true
+        MKeyBtn.Text = "..."
+        MkStroke.Color = Color3.fromRGB(255, 255, 255)
+    end)
+
+    Services.UserInputService.InputBegan:Connect(function(input)
+        if mListening and input.UserInputType == Enum.UserInputType.Keyboard then
+            local chosen = (input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace) and Enum.KeyCode.RightShift or input.KeyCode
+            mListening = false
+            MkStroke.Color = Color3.fromRGB(40, 40, 40)
+            MKeyBtn.Text = chosen.Name
+            State.UI.ToggleKey = chosen
+            ShowToast("Menu Key set to: " .. chosen.Name)
+        end
+    end)
+
+    -- 2. Watermark HUD Box
+    local WatermarkBox = CreateFunctionBox(InterfaceCard, "Watermark HUD", "Top-right hub FPS & Ping display", "rbxassetid://6031075929", 2)
+    local WSwitch = Instance.new("TextButton")
+    WSwitch.Size = UDim2.new(0, 42, 0, 22)
+    WSwitch.Position = UDim2.new(1, -52, 0.5, -11)
+    WSwitch.BackgroundColor3 = State.UI.Watermark and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(28, 28, 28)
+    WSwitch.BorderSizePixel = 0
+    WSwitch.Text = ""
+    WSwitch.AutoButtonColor = false
+    WSwitch.Parent = WatermarkBox
+
+    local WsCorner = Instance.new("UICorner")
+    WsCorner.CornerRadius = UDim.new(1, 0)
+    WsCorner.Parent = WSwitch
+
+    local WsStroke = Instance.new("UIStroke")
+    WsStroke.Color = Color3.fromRGB(40, 40, 40)
+    WsStroke.Thickness = 1
+    WsStroke.Parent = WSwitch
+
+    local WKnob = Instance.new("Frame")
+    WKnob.Size = UDim2.new(0, 16, 0, 16)
+    WKnob.Position = State.UI.Watermark and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
+    WKnob.BackgroundColor3 = State.UI.Watermark and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(140, 140, 140)
+    WKnob.BorderSizePixel = 0
+    WKnob.Parent = WSwitch
+
+    local WkCorner = Instance.new("UICorner")
+    WkCorner.CornerRadius = UDim.new(1, 0)
+    WkCorner.Parent = WKnob
+
+    WSwitch.MouseButton1Click:Connect(function()
+        State.UI.Watermark = not State.UI.Watermark
+        WatermarkBadge.Visible = State.UI.Watermark
+        local active = State.UI.Watermark
+        Services.TweenService:Create(WKnob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            Position = active and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
+            BackgroundColor3 = active and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(140, 140, 140)
+        }):Play()
+        Services.TweenService:Create(WSwitch, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            BackgroundColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(28, 28, 28)
+        }):Play()
+    end)
+
+    -- 3. Discord Community Box
+    local DiscordBox = CreateFunctionBox(InterfaceCard, "Discord Community", "Copy server invite (discord.gg/saviorhub)", "rbxassetid://6031075931", 3)
+    local DiscBtn = Instance.new("TextButton")
+    DiscBtn.Size = UDim2.new(0, 68, 0, 26)
+    DiscBtn.Position = UDim2.new(1, -78, 0.5, -13)
+    DiscBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    DiscBtn.BorderSizePixel = 0
+    DiscBtn.Text = "Join"
+    DiscBtn.Font = Enum.Font.GothamBold
+    DiscBtn.TextSize = 11
+    DiscBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    DiscBtn.AutoButtonColor = false
+    DiscBtn.Parent = DiscordBox
+
+    local DkCorner = Instance.new("UICorner")
+    DkCorner.CornerRadius = UDim.new(0, 6)
+    DkCorner.Parent = DiscBtn
+
+    local DkStroke = Instance.new("UIStroke")
+    DkStroke.Color = Color3.fromRGB(40, 40, 40)
+    DkStroke.Thickness = 1
+    DkStroke.Parent = DiscBtn
+
+    DiscBtn.MouseEnter:Connect(function()
+        Services.TweenService:Create(DiscBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
+    end)
+    DiscBtn.MouseLeave:Connect(function()
+        Services.TweenService:Create(DiscBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    end)
+    DiscBtn.MouseButton1Click:Connect(function()
         if SafeSetClipboard(State.Links.Discord) then
-            ShowToast("Copied Discord invite to clipboard!")
+            ShowToast("Discord invite copied to clipboard!")
         else
             ShowToast("Invite: " .. State.Links.Discord)
         end
     end)
 
-    CreateSocialCard(CommunityCard, "TikTok Channel", "Copy TikTok profile link", "rbxassetid://6031265976", "Follow", function()
+    -- 4. TikTok Channel Box
+    local TikTokBox = CreateFunctionBox(InterfaceCard, "TikTok Channel", "Follow @saviorhub for updates & clips", "rbxassetid://6031265976", 4)
+    local TkBtn = Instance.new("TextButton")
+    TkBtn.Size = UDim2.new(0, 68, 0, 26)
+    TkBtn.Position = UDim2.new(1, -78, 0.5, -13)
+    TkBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    TkBtn.BorderSizePixel = 0
+    TkBtn.Text = "Follow"
+    TkBtn.Font = Enum.Font.GothamBold
+    TkBtn.TextSize = 11
+    TkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TkBtn.AutoButtonColor = false
+    TkBtn.Parent = TikTokBox
+
+    local TkkCorner = Instance.new("UICorner")
+    TkkCorner.CornerRadius = UDim.new(0, 6)
+    TkkCorner.Parent = TkBtn
+
+    local TkkStroke = Instance.new("UIStroke")
+    TkkStroke.Color = Color3.fromRGB(40, 40, 40)
+    TkkStroke.Thickness = 1
+    TkkStroke.Parent = TkBtn
+
+    TkBtn.MouseEnter:Connect(function()
+        Services.TweenService:Create(TkBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
+    end)
+    TkBtn.MouseLeave:Connect(function()
+        Services.TweenService:Create(TkBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    end)
+    TkBtn.MouseButton1Click:Connect(function()
         if SafeSetClipboard(State.Links.TikTok) then
-            ShowToast("Copied TikTok channel to clipboard!")
+            ShowToast("TikTok channel copied to clipboard!")
         else
             ShowToast("TikTok: " .. State.Links.TikTok)
         end
     end)
 
-    CreateToggleRow(CommunityCard, "Show Watermark", false, State.UI.Watermark, function(val)
-        State.UI.Watermark = val
-        WatermarkBadge.Visible = val
-    end)
-
-    local SystemCard = CreateCard(SettingsPageView, "System Management", "Runtime session controls", 2)
-
     local function UnloadSystem()
-        pcall(function()
-            Services.RunService:UnbindFromRenderStep("SaviorAimbotStep")
-        end)
+        pcall(function() Services.RunService:UnbindFromRenderStep("SaviorHubCameraStep") end)
         for _, conn in ipairs(ActiveConnections) do
             pcall(function() conn:Disconnect() end)
         end
@@ -2304,10 +2524,142 @@ local function BuildSaviorInterface()
         ScreenGui:Destroy()
     end
 
+    -- 5. Copy Loadstring Box
+    local LoadstringBox = CreateFunctionBox(SystemCard, "Copy Loadstring", "Raw script loader line for executors", "rbxassetid://6031094678", 1)
+    local LsBtn = Instance.new("TextButton")
+    LsBtn.Size = UDim2.new(0, 68, 0, 26)
+    LsBtn.Position = UDim2.new(1, -78, 0.5, -13)
+    LsBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    LsBtn.BorderSizePixel = 0
+    LsBtn.Text = "Copy"
+    LsBtn.Font = Enum.Font.GothamBold
+    LsBtn.TextSize = 11
+    LsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    LsBtn.AutoButtonColor = false
+    LsBtn.Parent = LoadstringBox
+
+    local LscCorner = Instance.new("UICorner")
+    LscCorner.CornerRadius = UDim.new(0, 6)
+    LscCorner.Parent = LsBtn
+
+    local LscStroke = Instance.new("UIStroke")
+    LscStroke.Color = Color3.fromRGB(40, 40, 40)
+    LscStroke.Thickness = 1
+    LscStroke.Parent = LsBtn
+
+    LsBtn.MouseEnter:Connect(function()
+        Services.TweenService:Create(LsBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
+    end)
+    LsBtn.MouseLeave:Connect(function()
+        Services.TweenService:Create(LsBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    end)
+    LsBtn.MouseButton1Click:Connect(function()
+        local scriptLine = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/cylixstudios/unviersal/main/universal.lua", true))()'
+        if SafeSetClipboard(scriptLine) then
+            ShowToast("Loadstring copied to clipboard!")
+        else
+            ShowToast("Failed to access clipboard")
+        end
+    end)
+
+    -- 6. Rejoin Server Box
+    local RejoinBox = CreateFunctionBox(SystemCard, "Rejoin Server", "Quickly reconnect to this server instance", "rbxassetid://6031097225", 2)
+    local RjBtn = Instance.new("TextButton")
+    RjBtn.Size = UDim2.new(0, 68, 0, 26)
+    RjBtn.Position = UDim2.new(1, -78, 0.5, -13)
+    RjBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    RjBtn.BorderSizePixel = 0
+    RjBtn.Text = "Rejoin"
+    RjBtn.Font = Enum.Font.GothamBold
+    RjBtn.TextSize = 11
+    RjBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RjBtn.AutoButtonColor = false
+    RjBtn.Parent = RejoinBox
+
+    local RjcCorner = Instance.new("UICorner")
+    RjcCorner.CornerRadius = UDim.new(0, 6)
+    RjcCorner.Parent = RjBtn
+
+    local RjcStroke = Instance.new("UIStroke")
+    RjcStroke.Color = Color3.fromRGB(40, 40, 40)
+    RjcStroke.Thickness = 1
+    RjcStroke.Parent = RjBtn
+
+    RjBtn.MouseEnter:Connect(function()
+        Services.TweenService:Create(RjBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
+    end)
+    RjBtn.MouseLeave:Connect(function()
+        Services.TweenService:Create(RjBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    end)
+    RjBtn.MouseButton1Click:Connect(function()
+        ShowToast("Rejoining server...")
+        task.delay(0.5, function()
+            local ts = game:GetService("TeleportService")
+            pcall(function()
+                ts:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+            end)
+        end)
+    end)
+
+    -- 7. Server Hop Box
+    local HopBox = CreateFunctionBox(SystemCard, "Server Hop", "Teleport to another active public server", "rbxassetid://6031154871", 3)
+    local HopBtn = Instance.new("TextButton")
+    HopBtn.Size = UDim2.new(0, 68, 0, 26)
+    HopBtn.Position = UDim2.new(1, -78, 0.5, -13)
+    HopBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    HopBtn.BorderSizePixel = 0
+    HopBtn.Text = "Hop"
+    HopBtn.Font = Enum.Font.GothamBold
+    HopBtn.TextSize = 11
+    HopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    HopBtn.AutoButtonColor = false
+    HopBtn.Parent = HopBox
+
+    local HpcCorner = Instance.new("UICorner")
+    HpcCorner.CornerRadius = UDim.new(0, 6)
+    HpcCorner.Parent = HopBtn
+
+    local HpcStroke = Instance.new("UIStroke")
+    HpcStroke.Color = Color3.fromRGB(40, 40, 40)
+    HpcStroke.Thickness = 1
+    HpcStroke.Parent = HopBtn
+
+    HopBtn.MouseEnter:Connect(function()
+        Services.TweenService:Create(HopBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
+    end)
+    HopBtn.MouseLeave:Connect(function()
+        Services.TweenService:Create(HopBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+    end)
+    HopBtn.MouseButton1Click:Connect(function()
+        ShowToast("Searching for servers...")
+        task.spawn(function()
+            local ts = game:GetService("TeleportService")
+            local hs = Services.HttpService
+            local success, res = pcall(function()
+                return game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100")
+            end)
+            if success and res then
+                local data = pcall(function() return hs:JSONDecode(res) end) and hs:JSONDecode(res)
+                if data and data.data then
+                    for _, s in ipairs(data.data) do
+                        if s.playing < s.maxPlayers and s.id ~= game.JobId then
+                            ShowToast("Teleporting to server...")
+                            ts:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer)
+                            return
+                        end
+                    end
+                end
+            end
+            ShowToast("No alternative server found")
+        end)
+    end)
+
+    -- 8. Spacious, beautifully formatted Unload Box
     local UnloadBox = Instance.new("Frame")
     UnloadBox.Size = UDim2.new(1, 0, 0, 68)
-    UnloadBox.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+    UnloadBox.BackgroundColor3 = Color3.fromRGB(18, 14, 14)
     UnloadBox.BorderSizePixel = 0
+    UnloadBox.LayoutOrder = 4
     UnloadBox.Parent = SystemCard
 
     local UCorner = Instance.new("UICorner")
@@ -2315,51 +2667,75 @@ local function BuildSaviorInterface()
     UCorner.Parent = UnloadBox
 
     local UStroke = Instance.new("UIStroke")
-    UStroke.Color = Color3.fromRGB(44, 24, 24)
+    UStroke.Color = Color3.fromRGB(50, 24, 24)
     UStroke.Thickness = 1
     UStroke.Parent = UnloadBox
 
+    local UIconBadge = Instance.new("Frame")
+    UIconBadge.Size = UDim2.new(0, 32, 0, 32)
+    UIconBadge.Position = UDim2.new(0, 12, 0.5, -16)
+    UIconBadge.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
+    UIconBadge.BorderSizePixel = 0
+    UIconBadge.Parent = UnloadBox
+
+    local UibCorner = Instance.new("UICorner")
+    UibCorner.CornerRadius = UDim.new(0, 8)
+    UibCorner.Parent = UIconBadge
+
+    local UIcon = Instance.new("ImageLabel")
+    UIcon.Size = UDim2.new(0, 18, 0, 18)
+    UIcon.Position = UDim2.new(0.5, -9, 0.5, -9)
+    UIcon.BackgroundTransparency = 1
+    UIcon.Image = "rbxassetid://6031094674"
+    UIcon.ImageColor3 = Color3.fromRGB(255, 90, 90)
+    UIcon.Parent = UIconBadge
+
     local UTitle = Instance.new("TextLabel")
-    UTitle.Size = UDim2.new(1, -170, 0, 18)
-    UTitle.Position = UDim2.new(0, 14, 0, 12)
+    UTitle.Size = UDim2.new(1, -210, 0, 18)
+    UTitle.Position = UDim2.new(0, 52, 0, 14)
     UTitle.BackgroundTransparency = 1
     UTitle.Text = "Unload Savior Hub"
     UTitle.Font = Enum.Font.GothamBold
     UTitle.TextSize = 12
-    UTitle.TextColor3 = Color3.fromRGB(255, 90, 90)
+    UTitle.TextColor3 = Color3.fromRGB(255, 110, 110)
     UTitle.TextXAlignment = Enum.TextXAlignment.Left
     UTitle.Parent = UnloadBox
 
     local UDesc = Instance.new("TextLabel")
-    UDesc.Size = UDim2.new(1, -170, 0, 26)
-    UDesc.Position = UDim2.new(0, 14, 0, 30)
+    UDesc.Size = UDim2.new(1, -210, 0, 16)
+    UDesc.Position = UDim2.new(0, 52, 0, 32)
     UDesc.BackgroundTransparency = 1
-    UDesc.Text = "Completely detach all listeners, overlays, and GUI instances."
+    UDesc.Text = "Detach all camera hooks, overlays & GUI"
     UDesc.Font = Enum.Font.Gotham
     UDesc.TextSize = 10
-    UDesc.TextColor3 = Color3.fromRGB(140, 140, 140)
-    UDesc.TextWrapped = true
+    UDesc.TextColor3 = Color3.fromRGB(150, 110, 110)
     UDesc.TextXAlignment = Enum.TextXAlignment.Left
     UDesc.Parent = UnloadBox
 
+    local UnloadBtnContainer = Instance.new("Frame")
+    UnloadBtnContainer.Size = UDim2.new(0, 144, 0, 26)
+    UnloadBtnContainer.Position = UDim2.new(1, -152, 0.5, -13)
+    UnloadBtnContainer.BackgroundTransparency = 1
+    UnloadBtnContainer.Parent = UnloadBox
+
     local UnloadKeyBtn = Instance.new("TextButton")
-    UnloadKeyBtn.Size = UDim2.new(0, 60, 0, 26)
-    UnloadKeyBtn.Position = UDim2.new(1, -150, 0.5, -13)
-    UnloadKeyBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+    UnloadKeyBtn.Size = UDim2.new(0, 66, 1, 0)
+    UnloadKeyBtn.Position = UDim2.new(0, 0, 0, 0)
+    UnloadKeyBtn.BackgroundColor3 = Color3.fromRGB(24, 20, 20)
     UnloadKeyBtn.BorderSizePixel = 0
-    UnloadKeyBtn.Text = "Bind"
+    UnloadKeyBtn.Text = State.UI.UnloadBind == Enum.KeyCode.Unknown and "Bind: None" or ("Bind: " .. State.UI.UnloadBind.Name)
     UnloadKeyBtn.Font = Enum.Font.GothamMedium
-    UnloadKeyBtn.TextSize = 11
-    UnloadKeyBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
+    UnloadKeyBtn.TextSize = 10
+    UnloadKeyBtn.TextColor3 = Color3.fromRGB(190, 175, 175)
     UnloadKeyBtn.AutoButtonColor = false
-    UnloadKeyBtn.Parent = UnloadBox
+    UnloadKeyBtn.Parent = UnloadBtnContainer
 
     local UkCorner = Instance.new("UICorner")
     UkCorner.CornerRadius = UDim.new(0, 6)
     UkCorner.Parent = UnloadKeyBtn
 
     local UkStroke = Instance.new("UIStroke")
-    UkStroke.Color = Color3.fromRGB(36, 36, 36)
+    UkStroke.Color = Color3.fromRGB(42, 28, 28)
     UkStroke.Thickness = 1
     UkStroke.Parent = UnloadKeyBtn
 
@@ -2367,30 +2743,31 @@ local function BuildSaviorInterface()
     UnloadKeyBtn.MouseButton1Click:Connect(function()
         uListening = true
         UnloadKeyBtn.Text = "..."
-        UkStroke.Color = Color3.fromRGB(255, 255, 255)
+        UkStroke.Color = Color3.fromRGB(255, 100, 100)
     end)
 
     Services.UserInputService.InputBegan:Connect(function(input)
         if uListening and input.UserInputType == Enum.UserInputType.Keyboard then
             local chosen = (input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace) and Enum.KeyCode.Unknown or input.KeyCode
             uListening = false
-            UkStroke.Color = Color3.fromRGB(36, 36, 36)
-            UnloadKeyBtn.Text = chosen == Enum.KeyCode.Unknown and "Bind" or chosen.Name
+            UkStroke.Color = Color3.fromRGB(42, 28, 28)
+            UnloadKeyBtn.Text = chosen == Enum.KeyCode.Unknown and "Bind: None" or ("Bind: " .. chosen.Name)
             State.UI.UnloadBind = chosen
+            ShowToast("Unload Key: " .. chosen.Name)
         end
     end)
 
     local UnloadExecBtn = Instance.new("TextButton")
-    UnloadExecBtn.Size = UDim2.new(0, 75, 0, 26)
-    UnloadExecBtn.Position = UDim2.new(1, -82, 0.5, -13)
-    UnloadExecBtn.BackgroundColor3 = Color3.fromRGB(230, 60, 60)
+    UnloadExecBtn.Size = UDim2.new(0, 72, 1, 0)
+    UnloadExecBtn.Position = UDim2.new(1, -72, 0, 0)
+    UnloadExecBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
     UnloadExecBtn.BorderSizePixel = 0
     UnloadExecBtn.Text = "Unload"
     UnloadExecBtn.Font = Enum.Font.GothamBold
     UnloadExecBtn.TextSize = 11
     UnloadExecBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     UnloadExecBtn.AutoButtonColor = false
-    UnloadExecBtn.Parent = UnloadBox
+    UnloadExecBtn.Parent = UnloadBtnContainer
 
     local UeCorner = Instance.new("UICorner")
     UeCorner.CornerRadius = UDim.new(0, 6)
@@ -2433,6 +2810,7 @@ table.insert(ActiveConnections, InputBeganConn)
 local InputEndedConn = Services.UserInputService.InputEnded:Connect(function(input)
     if IsKeyMatch(State.Aimbot.Keybind, input) then
         State.Aimbot.Active = false
+        LockedTarget = nil
     end
 end)
 table.insert(ActiveConnections, InputEndedConn)
@@ -2456,12 +2834,8 @@ local PlayerRemovingConn = Services.Players.PlayerRemoving:Connect(function(play
 end)
 table.insert(ActiveConnections, PlayerRemovingConn)
 
--- Bind Targeting Pipeline directly to Camera render step to completely eliminate jump jitter
-pcall(function()
-    Services.RunService:BindToRenderStep("SaviorAimbotStep", Enum.RenderPriority.Camera.Value + 1, function()
-        StepTargeting()
-    end)
-end)
+-- Bind Camera Step after Roblox CameraModule (priority 201) to eliminate jump jitter and camera fighting
+Services.RunService:BindToRenderStep("SaviorHubCameraStep", Enum.RenderPriority.Camera.Value + 1, StepTargeting)
 
 -- Visuals Pipeline on RenderStepped
 local RenderConn = Services.RunService.RenderStepped:Connect(function()
