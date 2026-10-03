@@ -30,7 +30,7 @@ local State = {
         FOVSize = 200,
         SmoothnessX = 5,
         SmoothnessY = 5,
-        TargetPart = "Head",
+        TargetPart = "Head", -- "Head", "Torso", "HumanoidRootPart"
         Active = false
     },
     ESP = {
@@ -280,6 +280,19 @@ local function IsTeammate(player)
     return false
 end
 
+-- Resolve Target Hitbox Part based on Rig and User Selection
+local function GetHitboxPart(char, partSetting)
+    if not char then return nil end
+    if partSetting == "Head" then
+        return char:FindFirstChild("Head")
+    elseif partSetting == "Torso" then
+        return char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso") or char:FindFirstChild("LowerTorso")
+    elseif partSetting == "HumanoidRootPart" then
+        return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+    end
+    return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+end
+
 -- Target Acquisition
 local function GetClosestTarget()
     local bestTarget = nil
@@ -292,7 +305,7 @@ local function GetClosestTarget()
         if player ~= LocalPlayer and player.Character then
             local char = player.Character
             local humanoid = char:FindFirstChildOfClass("Humanoid")
-            local targetPart = char:FindFirstChild(State.Aimbot.TargetPart) or char:FindFirstChild("HumanoidRootPart")
+            local targetPart = GetHitboxPart(char, State.Aimbot.TargetPart)
 
             if humanoid and humanoid.Health > 0 and targetPart then
                 if not (State.Aimbot.TeamCheck and IsTeammate(player)) then
@@ -319,7 +332,7 @@ local function GetClosestTarget()
     return bestTarget
 end
 
--- Targeting Execution Step
+-- Targeting Execution Step (Calibrated to eliminate jump jitter with fromOrientation)
 local function StepTargeting()
     local shouldAim = State.Aimbot.Enabled and (
         State.Aimbot.Keybind == Enum.KeyCode.Unknown or State.Aimbot.Active
@@ -327,10 +340,15 @@ local function StepTargeting()
     if not shouldAim then return end
 
     local target = GetClosestTarget()
-    if target then
+    if target and target.Part then
         local aimPos = target.Position
         if State.Aimbot.UsePrediction and target.Velocity then
-            aimPos = aimPos + (target.Velocity * (State.Aimbot.PredictionValue * 0.015))
+            local vel = target.Velocity
+            aimPos = aimPos + Vector3.new(
+                vel.X * (State.Aimbot.PredictionValue * 0.015),
+                vel.Y * (State.Aimbot.PredictionValue * 0.012),
+                vel.Z * (State.Aimbot.PredictionValue * 0.015)
+            )
         end
 
         local currentCFrame = Camera.CFrame
@@ -346,9 +364,9 @@ local function StepTargeting()
         local smoothYFactor = math.clamp(1 / math.max(State.Aimbot.SmoothnessY, 1), 0.02, 1)
 
         local newY = currentY + (deltaY * smoothXFactor)
-        local newX = currentX + (deltaX * smoothYFactor)
+        local newX = math.clamp(currentX + (deltaX * smoothYFactor), math.rad(-88), math.rad(88))
 
-        Camera.CFrame = CFrame.new(currentCFrame.Position) * CFrame.Angles(newX, newY, 0)
+        Camera.CFrame = CFrame.new(currentCFrame.Position) * CFrame.fromOrientation(newX, newY, 0)
     end
 end
 
@@ -366,7 +384,6 @@ local function StepVisuals()
     local viewportSize = Camera.ViewportSize
     local rainbowColor = State.ESP.Rainbow and Color3.fromHSV((tick() * 0.4) % 1, 1, 1) or Color3.fromRGB(255, 255, 255)
 
-    -- Update Radar frame visibility
     if RadarFrameInstance then
         RadarFrameInstance.Visible = State.ESP.Enabled and State.ESP.Radar
     end
@@ -393,7 +410,7 @@ local function StepVisuals()
             canRender = false
         end
 
-        -- Radar Blip Update
+        -- Radar Blip Rendering
         if State.ESP.Enabled and State.ESP.Radar and not isSelf and char and rootPart and myRoot and RadarFrameInstance then
             local blip = RadarBlips[player]
             if not blip then
@@ -606,9 +623,7 @@ local function BuildSaviorInterface()
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-    -- ==========================================================================
-    -- RADAR MINIMAP OVERLAY (Draggable, Circular, Clean)
-    -- ==========================================================================
+    -- Radar Minimap
     local RadarFrame = Instance.new("Frame")
     RadarFrame.Name = "RadarFrame"
     RadarFrame.Size = UDim2.new(0, 150, 0, 150)
@@ -628,7 +643,6 @@ local function BuildSaviorInterface()
     RStroke.Thickness = 1.2
     RStroke.Parent = RadarFrame
 
-    -- Radar Crosshair Lines
     local RLineH = Instance.new("Frame")
     RLineH.Size = UDim2.new(1, 0, 0, 1)
     RLineH.Position = UDim2.new(0, 0, 0.5, 0)
@@ -643,7 +657,6 @@ local function BuildSaviorInterface()
     RLineV.BorderSizePixel = 0
     RLineV.Parent = RadarFrame
 
-    -- Local Player Center Dot
     local RCenterDot = Instance.new("Frame")
     RCenterDot.Size = UDim2.new(0, 6, 0, 6)
     RCenterDot.Position = UDim2.new(0.5, -3, 0.5, -3)
@@ -656,7 +669,6 @@ local function BuildSaviorInterface()
     RCenterCorner.CornerRadius = UDim.new(1, 0)
     RCenterCorner.Parent = RCenterDot
 
-    -- Radar Dragging
     local rDragging = false
     local rDragStart, rStartPos
     RadarFrame.InputBegan:Connect(function(input)
@@ -683,9 +695,7 @@ local function BuildSaviorInterface()
         end
     end)
 
-    -- ==========================================================================
-    -- TOP-RIGHT WATERMARK BADGE (Menu Name | FPS | Ping)
-    -- ==========================================================================
+    -- Top-Right Watermark Badge
     local WatermarkBadge = Instance.new("Frame")
     WatermarkBadge.Name = "WatermarkBadge"
     WatermarkBadge.Size = UDim2.new(0, 240, 0, 30)
@@ -849,7 +859,7 @@ local function BuildSaviorInterface()
     BrandTitle.TextXAlignment = Enum.TextXAlignment.Left
     BrandTitle.Parent = BrandContainer
 
-    -- Navigation Tabs List
+    -- Navigation Tabs
     local NavContainer = Instance.new("Frame")
     NavContainer.Size = UDim2.new(1, 0, 0, 160)
     NavContainer.Position = UDim2.new(0, 0, 0, 65)
@@ -1310,6 +1320,85 @@ local function BuildSaviorInterface()
                 BackgroundColor3 = targetColor
             }):Play()
             onToggleChanged(active)
+        end)
+    end
+
+    -- Helper Component: Hitbox / Part Selector Row (Cycle Pill)
+    local function CreateSelectorRow(parent, name, options, defaultSelected, onSelectChanged)
+        local Row = Instance.new("Frame")
+        Row.Size = UDim2.new(1, 0, 0, 30)
+        Row.BackgroundTransparency = 1
+        Row.Parent = parent
+
+        local Label = Instance.new("TextLabel")
+        Label.Size = UDim2.new(1, -120, 1, 0)
+        Label.Position = UDim2.new(0, 0, 0, 0)
+        Label.BackgroundTransparency = 1
+        Label.Text = name
+        Label.Font = Enum.Font.Gotham
+        Label.TextSize = 12
+        Label.TextColor3 = Color3.fromRGB(230, 230, 230)
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.Parent = Row
+
+        local CycleBtn = Instance.new("TextButton")
+        CycleBtn.Size = UDim2.new(0, 110, 0, 22)
+        CycleBtn.Position = UDim2.new(1, -110, 0.5, -11)
+        CycleBtn.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+        CycleBtn.BorderSizePixel = 0
+        CycleBtn.Text = ""
+        CycleBtn.AutoButtonColor = false
+        CycleBtn.Parent = Row
+
+        local CCorner = Instance.new("UICorner")
+        CCorner.CornerRadius = UDim.new(0, 6)
+        CCorner.Parent = CycleBtn
+
+        local CStroke = Instance.new("UIStroke")
+        CStroke.Color = Color3.fromRGB(36, 36, 36)
+        CStroke.Thickness = 1
+        CStroke.Parent = CycleBtn
+
+        local CycleText = Instance.new("TextLabel")
+        CycleText.Size = UDim2.new(1, -18, 1, 0)
+        CycleText.Position = UDim2.new(0, 8, 0, 0)
+        CycleText.BackgroundTransparency = 1
+        CycleText.Text = defaultSelected
+        CycleText.Font = Enum.Font.GothamBold
+        CycleText.TextSize = 11
+        CycleText.TextColor3 = Color3.fromRGB(240, 240, 240)
+        CycleText.TextXAlignment = Enum.TextXAlignment.Left
+        CycleText.Parent = CycleBtn
+
+        local Arrow = Instance.new("ImageLabel")
+        Arrow.Size = UDim2.new(0, 10, 0, 10)
+        Arrow.Position = UDim2.new(1, -14, 0.5, -5)
+        Arrow.BackgroundTransparency = 1
+        Arrow.Image = "rbxassetid://6031091004"
+        Arrow.ImageColor3 = Color3.fromRGB(160, 160, 160)
+        Arrow.Parent = CycleBtn
+
+        local currentIdx = 1
+        for i, opt in ipairs(options) do
+            if opt == defaultSelected then
+                currentIdx = i
+                break
+            end
+        end
+
+        CycleBtn.MouseEnter:Connect(function()
+            Services.TweenService:Create(CycleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(30, 30, 30)}):Play()
+        end)
+        CycleBtn.MouseLeave:Connect(function()
+            Services.TweenService:Create(CycleBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(22, 22, 22)}):Play()
+        end)
+
+        CycleBtn.MouseButton1Click:Connect(function()
+            currentIdx = currentIdx + 1
+            if currentIdx > #options then currentIdx = 1 end
+            local selected = options[currentIdx]
+            CycleText.Text = selected
+            onSelectChanged(selected)
         end)
     end
 
@@ -1804,6 +1893,11 @@ local function BuildSaviorInterface()
         State.Aimbot.Enabled = val
     end)
 
+    CreateSelectorRow(AimCard, "Target Hitbox", {"Head", "Torso", "HumanoidRootPart"}, State.Aimbot.TargetPart, function(selected)
+        State.Aimbot.TargetPart = selected
+        ShowToast("Target Hitbox set to: " .. selected)
+    end)
+
     CreateToggleRow(AimCard, "Team Check", true, State.Aimbot.TeamCheck, function(val)
         State.Aimbot.TeamCheck = val
     end)
@@ -1971,7 +2065,6 @@ local function BuildSaviorInterface()
         end
     end)
 
-    -- Persistent Player Modification Loop (Strictly when enabled)
     local PlayerConn = Services.RunService.RenderStepped:Connect(function()
         if LocalPlayer.Character then
             local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
@@ -2195,6 +2288,9 @@ local function BuildSaviorInterface()
     local SystemCard = CreateCard(SettingsPageView, "System Management", "Runtime session controls", 2)
 
     local function UnloadSystem()
+        pcall(function()
+            Services.RunService:UnbindFromRenderStep("SaviorAimbotStep")
+        end)
         for _, conn in ipairs(ActiveConnections) do
             pcall(function() conn:Disconnect() end)
         end
@@ -2208,7 +2304,6 @@ local function BuildSaviorInterface()
         ScreenGui:Destroy()
     end
 
-    -- Unload System Card
     local UnloadBox = Instance.new("Frame")
     UnloadBox.Size = UDim2.new(1, 0, 0, 68)
     UnloadBox.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
@@ -2247,7 +2342,6 @@ local function BuildSaviorInterface()
     UDesc.TextXAlignment = Enum.TextXAlignment.Left
     UDesc.Parent = UnloadBox
 
-    -- Bind Button
     local UnloadKeyBtn = Instance.new("TextButton")
     UnloadKeyBtn.Size = UDim2.new(0, 60, 0, 26)
     UnloadKeyBtn.Position = UDim2.new(1, -150, 0.5, -13)
@@ -2286,7 +2380,6 @@ local function BuildSaviorInterface()
         end
     end)
 
-    -- Unload Action Button
     local UnloadExecBtn = Instance.new("TextButton")
     UnloadExecBtn.Size = UDim2.new(0, 75, 0, 26)
     UnloadExecBtn.Position = UDim2.new(1, -82, 0.5, -13)
@@ -2363,9 +2456,15 @@ local PlayerRemovingConn = Services.Players.PlayerRemoving:Connect(function(play
 end)
 table.insert(ActiveConnections, PlayerRemovingConn)
 
--- Render Stepped Pipeline
+-- Bind Targeting Pipeline directly to Camera render step to completely eliminate jump jitter
+pcall(function()
+    Services.RunService:BindToRenderStep("SaviorAimbotStep", Enum.RenderPriority.Camera.Value + 1, function()
+        StepTargeting()
+    end)
+end)
+
+-- Visuals Pipeline on RenderStepped
 local RenderConn = Services.RunService.RenderStepped:Connect(function()
-    StepTargeting()
     StepVisuals()
 end)
 table.insert(ActiveConnections, RenderConn)
