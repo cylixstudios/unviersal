@@ -693,16 +693,17 @@ local function StepVisuals()
 end
 
 -- ==============================================================================
--- MAGIC ENGINE: Penetrate Player Builds & Shoot Through Walls
+-- MAGIC ENGINE: Zero-Lag Event-Driven Build Penetration & Bullet Routing
 -- ==============================================================================
 
 local BuildOriginalState = {}
+local MagicDescendantConn = nil
 
 local function IsPlayerBuild(instance)
     if not instance or not instance:IsA("BasePart") then return false end
     if instance.Parent == Services.Workspace.Terrain then return false end
 
-    -- Ignore local character and other player characters
+    -- Fast-check: Ignore player characters
     for _, p in ipairs(Services.Players:GetPlayers()) do
         if p.Character and instance:IsDescendantOf(p.Character) then
             return false
@@ -728,6 +729,7 @@ local function IsPlayerBuild(instance)
 end
 
 local function ApplyMagicBuild(part)
+    if not part:IsA("BasePart") then return end
     if not BuildOriginalState[part] then
         BuildOriginalState[part] = {
             CanQuery = part.CanQuery,
@@ -756,24 +758,74 @@ local function RestoreMagicBuild(part)
     BuildOriginalState[part] = nil
 end
 
-local function StepMagicEngine()
-    if not State.Aimbot.Magic then
-        if next(BuildOriginalState) ~= nil then
+-- Asynchronous, zero-lag Magic activation & restoration
+local function SetMagicState(enabled)
+    State.Aimbot.Magic = enabled
+    if enabled then
+        -- 1. Scan builds asynchronously in micro-batches (never freezes/lags the main thread)
+        task.spawn(function()
+            local folders = {
+                Services.Workspace:FindFirstChild("Builds"),
+                Services.Workspace:FindFirstChild("Structures"),
+                Services.Workspace:FindFirstChild("Building"),
+                Services.Workspace:FindFirstChild("Debris")
+            }
+            local foundFolder = false
+            for _, f in ipairs(folders) do
+                if f then
+                    foundFolder = true
+                    for _, obj in ipairs(f:GetDescendants()) do
+                        if not State.Aimbot.Magic then return end
+                        if IsPlayerBuild(obj) then
+                            ApplyMagicBuild(obj)
+                        end
+                    end
+                end
+            end
+
+            if not foundFolder then
+                local batchCount = 0
+                for _, obj in ipairs(Services.Workspace:GetChildren()) do
+                    if not State.Aimbot.Magic then return end
+                    if obj ~= LocalPlayer.Character and obj ~= Services.Workspace.Terrain then
+                        for _, child in ipairs(obj:GetDescendants()) do
+                            if IsPlayerBuild(child) then
+                                ApplyMagicBuild(child)
+                            end
+                            batchCount = batchCount + 1
+                            if batchCount % 150 == 0 then
+                                task.wait()
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+
+        -- 2. Pure event listener: catches new builds placed by players with zero frame cost
+        if not MagicDescendantConn then
+            MagicDescendantConn = Services.Workspace.DescendantAdded:Connect(function(child)
+                if State.Aimbot.Magic and IsPlayerBuild(child) then
+                    ApplyMagicBuild(child)
+                end
+            end)
+            table.insert(ActiveConnections, MagicDescendantConn)
+        end
+    else
+        -- Clean up event listener and restore builds
+        if MagicDescendantConn then
+            pcall(function() MagicDescendantConn:Disconnect() end)
+            MagicDescendantConn = nil
+        end
+        task.spawn(function()
             for part, _ in pairs(BuildOriginalState) do
                 RestoreMagicBuild(part)
             end
-        end
-        return
-    end
-
-    for _, obj in ipairs(Services.Workspace:GetDescendants()) do
-        if IsPlayerBuild(obj) then
-            ApplyMagicBuild(obj)
-        end
+        end)
     end
 end
 
--- Metamethod Hooking for Universal Magic Penetration
+-- Ultra-Fast Metamethod Hook (Only queries target when actively aiming/shooting)
 pcall(function()
     if hookmetamethod and typeof(hookmetamethod) == "function" then
         local oldNamecall
@@ -781,9 +833,10 @@ pcall(function()
             local method = getnamecallmethod()
             local args = {...}
 
-            if State.Aimbot.Magic and not checkcaller() then
+            -- Only intercept when Magic is enabled AND aim is active (eliminates all background raycast lag)
+            if State.Aimbot.Magic and (State.Aimbot.Active or LockedTarget) and not checkcaller() then
                 if method == "Raycast" and self == Services.Workspace then
-                    local target = GetClosestTarget()
+                    local target = LockedTarget or GetClosestTarget()
                     if target and target.Part then
                         local origin = args[1]
                         local targetDir = (target.Part.Position - origin).Unit * 1000
@@ -791,7 +844,7 @@ pcall(function()
                         return oldNamecall(self, table.unpack(args))
                     end
                 elseif method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRay" then
-                    local target = GetClosestTarget()
+                    local target = LockedTarget or GetClosestTarget()
                     if target and target.Part then
                         return target.Part, target.Part.Position, Vector3.new(0, 1, 0), target.Part.Material
                     end
@@ -802,9 +855,9 @@ pcall(function()
 
         local oldIndex
         oldIndex = hookmetamethod(game, "__index", function(self, key)
-            if State.Aimbot.Magic and not checkcaller() then
+            if State.Aimbot.Magic and (State.Aimbot.Active or LockedTarget) and not checkcaller() then
                 if typeof(self) == "Instance" and self:IsA("Mouse") and (key == "Hit" or key == "Target") then
-                    local target = GetClosestTarget()
+                    local target = LockedTarget or GetClosestTarget()
                     if target and target.Part then
                         if key == "Hit" then
                             return target.Part.CFrame
@@ -2101,7 +2154,7 @@ local function BuildSaviorInterface()
     end, nil, NextAim())
 
     CreateToggleRow(AimCard, "Magic (Shoot Through Builds)", true, State.Aimbot.Magic, function(val)
-        State.Aimbot.Magic = val
+        SetMagicState(val)
         ShowToast(val and "Magic: Enabled (Shooting through builds active)" or "Magic: Disabled")
     end, nil, NextAim())
 
@@ -2965,10 +3018,9 @@ table.insert(ActiveConnections, PlayerRemovingConn)
 -- Bind Camera Step after Roblox CameraModule (priority 201) to eliminate jump jitter and camera fighting
 Services.RunService:BindToRenderStep("SaviorHubCameraStep", Enum.RenderPriority.Camera.Value + 1, StepTargeting)
 
--- Visuals & Magic Engine Pipeline on RenderStepped
+-- Visuals Pipeline on RenderStepped (Zero-Lag)
 local RenderConn = Services.RunService.RenderStepped:Connect(function()
     StepVisuals()
-    StepMagicEngine()
 end)
 table.insert(ActiveConnections, RenderConn)
 
