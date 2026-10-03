@@ -295,7 +295,10 @@ end
 
 -- Targeting Execution Step
 local function StepTargeting()
-    if not State.Aimbot.Enabled or not State.Aimbot.Active then return end
+    local shouldAim = State.Aimbot.Enabled and (
+        State.Aimbot.Keybind == Enum.KeyCode.Unknown or State.Aimbot.Active
+    )
+    if not shouldAim then return end
 
     local target = GetClosestTarget()
     if target then
@@ -483,7 +486,7 @@ local function StepVisuals()
 end
 
 -- ==============================================================================
--- GUI CONSTRUCTION: Savior Hub (Seamless Curves + Fixed Keybinds + Settings + Live Preview)
+-- GUI CONSTRUCTION: Savior Hub (Seamless Corner Curves + Fixed Keybinds + Live Pop-Out)
 -- ==============================================================================
 
 local ActiveConnections = {}
@@ -499,14 +502,14 @@ local function BuildSaviorInterface()
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-    -- Main Container Window (Unified Seamless Matte Black Base)
+    -- Main Container Window (Matte Black, Unified Flawless Border)
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.Size = UDim2.new(0, 720, 0, 500)
     MainFrame.Position = UDim2.new(0.5, -360, 0.5, -250)
     MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
     MainFrame.BorderSizePixel = 0
-    MainFrame.ClipsDescendants = true
+    MainFrame.ClipsDescendants = false
     MainFrame.Parent = ScreenGui
 
     local MainCorner = Instance.new("UICorner")
@@ -514,9 +517,22 @@ local function BuildSaviorInterface()
     MainCorner.Parent = MainFrame
 
     local MainStroke = Instance.new("UIStroke")
-    MainStroke.Color = Color3.fromRGB(28, 28, 28)
+    MainStroke.Color = Color3.fromRGB(30, 30, 30)
     MainStroke.Thickness = 1.2
+    MainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     MainStroke.Parent = MainFrame
+
+    -- Inner background panel ensuring zero corner clipping or seam defects
+    local InnerBackground = Instance.new("Frame")
+    InnerBackground.Size = UDim2.new(1, 0, 1, 0)
+    InnerBackground.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    InnerBackground.BorderSizePixel = 0
+    InnerBackground.ClipsDescendants = true
+    InnerBackground.Parent = MainFrame
+
+    local InnerCorner = Instance.new("UICorner")
+    InnerCorner.CornerRadius = UDim.new(0, 18)
+    InnerCorner.Parent = InnerBackground
 
     -- Dragging Logic
     local dragging = false
@@ -554,33 +570,22 @@ local function BuildSaviorInterface()
         end
     end)
 
-    -- Left Navigation Sidebar (Transparent container to eliminate corner clipping artifacts)
+    -- Left Navigation Sidebar (Transparent background, no corner clashing)
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 175, 1, 0)
     Sidebar.Position = UDim2.new(0, 0, 0, 0)
-    Sidebar.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
+    Sidebar.BackgroundTransparency = 1
     Sidebar.BorderSizePixel = 0
-    Sidebar.Parent = MainFrame
+    Sidebar.Parent = InnerBackground
 
-    -- Inner curve layer ensuring top-left and bottom-left curves match MainFrame with zero bleed
-    local SidebarCorner = Instance.new("UICorner")
-    SidebarCorner.CornerRadius = UDim.new(0, 18)
-    SidebarCorner.Parent = Sidebar
-
-    local SidebarRightBlock = Instance.new("Frame")
-    SidebarRightBlock.Size = UDim2.new(0, 20, 1, 0)
-    SidebarRightBlock.Position = UDim2.new(1, -20, 0, 0)
-    SidebarRightBlock.BackgroundColor3 = Color3.fromRGB(8, 8, 8)
-    SidebarRightBlock.BorderSizePixel = 0
-    SidebarRightBlock.Parent = Sidebar
-
-    local SidebarBorder = Instance.new("Frame")
-    SidebarBorder.Size = UDim2.new(0, 1, 1, 0)
-    SidebarBorder.Position = UDim2.new(1, -1, 0, 0)
-    SidebarBorder.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
-    SidebarBorder.BorderSizePixel = 0
-    SidebarBorder.Parent = Sidebar
+    -- Vertical Divider separating Sidebar from content
+    local SidebarDivider = Instance.new("Frame")
+    SidebarDivider.Size = UDim2.new(0, 1, 1, -28)
+    SidebarDivider.Position = UDim2.new(1, -1, 0, 14)
+    SidebarDivider.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+    SidebarDivider.BorderSizePixel = 0
+    SidebarDivider.Parent = Sidebar
 
     -- Logo / Brand Header ("Savior Hub")
     local BrandContainer = Instance.new("Frame")
@@ -624,13 +629,12 @@ local function BuildSaviorInterface()
     NavPadding.PaddingRight = UDim.new(0, 12)
     NavPadding.Parent = NavContainer
 
-    -- Helper: Navigation Button Generator
     local TabButtons = {}
     local function CreateNavTab(name, iconId, tabKey, layoutOrder)
         local TabBtn = Instance.new("TextButton")
         TabBtn.Name = tabKey .. "Nav"
         TabBtn.Size = UDim2.new(1, 0, 0, 38)
-        TabBtn.BackgroundColor3 = (State.UI.CurrentTab == tabKey) and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(10, 10, 10)
+        TabBtn.BackgroundColor3 = (State.UI.CurrentTab == tabKey) and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(12, 12, 12)
         TabBtn.BorderSizePixel = 0
         TabBtn.Text = ""
         TabBtn.AutoButtonColor = false
@@ -642,7 +646,7 @@ local function BuildSaviorInterface()
         Corner.Parent = TabBtn
 
         local Stroke = Instance.new("UIStroke")
-        Stroke.Color = (State.UI.CurrentTab == tabKey) and Color3.fromRGB(34, 34, 34) or Color3.fromRGB(16, 16, 16)
+        Stroke.Color = (State.UI.CurrentTab == tabKey) and Color3.fromRGB(36, 36, 36) or Color3.fromRGB(18, 18, 18)
         Stroke.Thickness = 1
         Stroke.Parent = TabBtn
 
@@ -687,12 +691,12 @@ local function BuildSaviorInterface()
 
         TabBtn.MouseEnter:Connect(function()
             if State.UI.CurrentTab ~= tabKey then
-                Services.TweenService:Create(TabBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(14, 14, 14)}):Play()
+                Services.TweenService:Create(TabBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(16, 16, 16)}):Play()
             end
         end)
         TabBtn.MouseLeave:Connect(function()
             if State.UI.CurrentTab ~= tabKey then
-                Services.TweenService:Create(TabBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(10, 10, 10)}):Play()
+                Services.TweenService:Create(TabBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(12, 12, 12)}):Play()
             end
         end)
 
@@ -707,7 +711,7 @@ local function BuildSaviorInterface()
     ProfileBox.Name = "ProfileBox"
     ProfileBox.Size = UDim2.new(1, -24, 0, 56)
     ProfileBox.Position = UDim2.new(0, 12, 1, -68)
-    ProfileBox.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+    ProfileBox.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
     ProfileBox.BorderSizePixel = 0
     ProfileBox.Parent = Sidebar
 
@@ -778,9 +782,9 @@ local function BuildSaviorInterface()
     ContentMaster.Size = UDim2.new(1, -175, 1, 0)
     ContentMaster.Position = UDim2.new(0, 175, 0, 0)
     ContentMaster.BackgroundTransparency = 1
-    ContentMaster.Parent = MainFrame
+    ContentMaster.Parent = InnerBackground
 
-    -- View 1: Main Page (Aimbot Controls & ESP Visuals)
+    -- View 1: Main Page
     local MainPageView = Instance.new("Frame")
     MainPageView.Name = "MainPageView"
     MainPageView.Size = UDim2.new(1, 0, 1, 0)
@@ -822,21 +826,21 @@ local function BuildSaviorInterface()
     SettingsCardsPadding.PaddingBottom = UDim.new(0, 14)
     SettingsCardsPadding.Parent = SettingsPageView
 
-    -- Toast Notification Label for Settings Actions
+    -- Toast Notification Label
     local ToastLabel = Instance.new("TextLabel")
-    ToastLabel.Size = UDim2.new(0, 260, 0, 32)
-    ToastLabel.Position = UDim2.new(0.5, -130, 0, -45)
-    ToastLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    ToastLabel.Size = UDim2.new(0, 280, 0, 34)
+    ToastLabel.Position = UDim2.new(0.5, -140, 0, -45)
+    ToastLabel.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
     ToastLabel.BorderSizePixel = 0
     ToastLabel.Text = ""
     ToastLabel.Font = Enum.Font.GothamMedium
     ToastLabel.TextSize = 12
     ToastLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    ToastLabel.ZIndex = 10
+    ToastLabel.ZIndex = 20
     ToastLabel.Parent = MainFrame
 
     local ToastCorner = Instance.new("UICorner")
-    ToastCorner.CornerRadius = UDim.new(0, 8)
+    ToastCorner.CornerRadius = UDim.new(0, 10)
     ToastCorner.Parent = ToastLabel
 
     local ToastStroke = Instance.new("UIStroke")
@@ -847,23 +851,22 @@ local function BuildSaviorInterface()
     local function ShowToast(msg)
         ToastLabel.Text = msg
         Services.TweenService:Create(ToastLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Position = UDim2.new(0.5, -130, 0, 15)
+            Position = UDim2.new(0.5, -140, 0, 15)
         }):Play()
         task.delay(2.2, function()
             Services.TweenService:Create(ToastLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Position = UDim2.new(0.5, -130, 0, -45)
+                Position = UDim2.new(0.5, -140, 0, -45)
             }):Play()
         end)
     end
 
-    -- Tab Switch Handler
     local function SwitchTab(newTabKey)
         State.UI.CurrentTab = newTabKey
         for key, tabData in pairs(TabButtons) do
             local isSelected = (key == newTabKey)
             tabData.Indicator.Visible = isSelected
-            tabData.Button.BackgroundColor3 = isSelected and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(10, 10, 10)
-            tabData.Stroke.Color = isSelected and Color3.fromRGB(34, 34, 34) or Color3.fromRGB(16, 16, 16)
+            tabData.Button.BackgroundColor3 = isSelected and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(12, 12, 12)
+            tabData.Stroke.Color = isSelected and Color3.fromRGB(36, 36, 36) or Color3.fromRGB(18, 18, 18)
             tabData.Icon.ImageColor3 = isSelected and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 160)
             tabData.Text.TextColor3 = isSelected and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 160)
         end
@@ -874,12 +877,12 @@ local function BuildSaviorInterface()
     NavMain.MouseButton1Click:Connect(function() SwitchTab("Main") end)
     NavSettings.MouseButton1Click:Connect(function() SwitchTab("Settings") end)
 
-    -- Helper Component: Card Generator (Curved & Neat)
+    -- Helper Component: Card Generator
     local function CreateCard(parentView, title, subtitle, layoutOrder)
         local Card = Instance.new("Frame")
         Card.Name = title .. "Card"
         Card.Size = UDim2.new(0.5, -7, 1, 0)
-        Card.BackgroundColor3 = Color3.fromRGB(13, 13, 13)
+        Card.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
         Card.BorderSizePixel = 0
         Card.LayoutOrder = layoutOrder
         Card.Parent = parentView
@@ -889,7 +892,7 @@ local function BuildSaviorInterface()
         CardCorner.Parent = Card
 
         local CardStroke = Instance.new("UIStroke")
-        CardStroke.Color = Color3.fromRGB(24, 24, 24)
+        CardStroke.Color = Color3.fromRGB(26, 26, 26)
         CardStroke.Thickness = 1
         CardStroke.Parent = Card
 
@@ -923,7 +926,7 @@ local function BuildSaviorInterface()
         local HeaderDivider = Instance.new("Frame")
         HeaderDivider.Size = UDim2.new(1, -28, 0, 1)
         HeaderDivider.Position = UDim2.new(0, 14, 0, 48)
-        HeaderDivider.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+        HeaderDivider.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
         HeaderDivider.BorderSizePixel = 0
         HeaderDivider.Parent = Card
 
@@ -933,7 +936,7 @@ local function BuildSaviorInterface()
         Scroll.BackgroundTransparency = 1
         Scroll.BorderSizePixel = 0
         Scroll.ScrollBarThickness = 3
-        Scroll.ScrollBarImageColor3 = Color3.fromRGB(36, 36, 36)
+        Scroll.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 40)
         Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
         Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
         Scroll.Parent = Card
@@ -953,7 +956,7 @@ local function BuildSaviorInterface()
         return Scroll
     end
 
-    -- Helper: Bulletproof Keybind & Master Switch Row
+    -- Helper: Keybind & Master Switch Row
     local function CreateMasterRow(parent, defaultKey, onKeybindChanged, defaultActive, onToggleChanged)
         local Row = Instance.new("Frame")
         Row.Size = UDim2.new(1, 0, 0, 32)
@@ -975,7 +978,7 @@ local function BuildSaviorInterface()
         KeyCorner.Parent = KeyBtn
 
         local KeyStroke = Instance.new("UIStroke")
-        KeyStroke.Color = Color3.fromRGB(32, 32, 32)
+        KeyStroke.Color = Color3.fromRGB(34, 34, 34)
         KeyStroke.Thickness = 1
         KeyStroke.Parent = KeyBtn
 
@@ -1031,7 +1034,7 @@ local function BuildSaviorInterface()
 
                 if chosen then
                     listening = false
-                    KeyStroke.Color = Color3.fromRGB(32, 32, 32)
+                    KeyStroke.Color = Color3.fromRGB(34, 34, 34)
                     KeyText.Text = FormatKeyText(chosen)
                     onKeybindChanged(chosen)
                 end
@@ -1122,7 +1125,7 @@ local function BuildSaviorInterface()
             SubCorner.Parent = SubBtn
 
             local SubStroke = Instance.new("UIStroke")
-            SubStroke.Color = Color3.fromRGB(32, 32, 32)
+            SubStroke.Color = Color3.fromRGB(34, 34, 34)
             SubStroke.Thickness = 1
             SubStroke.Parent = SubBtn
 
@@ -1178,7 +1181,7 @@ local function BuildSaviorInterface()
         end)
     end
 
-    -- Helper Component: Slider Row with Global Dragging (Fixed non-stick)
+    -- Helper Component: Slider Row with Global Dragging
     local function CreateSliderRow(parent, name, minVal, maxVal, defaultVal, onValueChanged)
         local Container = Instance.new("Frame")
         Container.Size = UDim2.new(1, 0, 0, 42)
@@ -1369,7 +1372,7 @@ local function BuildSaviorInterface()
     PreviewFrame.Position = UDim2.new(0.5, 374, 0.5, -250)
     PreviewFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
     PreviewFrame.BorderSizePixel = 0
-    PreviewFrame.ClipsDescendants = true
+    PreviewFrame.ClipsDescendants = false
     PreviewFrame.Visible = State.ESP.Enabled
     PreviewFrame.Parent = ScreenGui
 
@@ -1378,17 +1381,19 @@ local function BuildSaviorInterface()
     PreviewCorner.Parent = PreviewFrame
 
     local PreviewStroke = Instance.new("UIStroke")
-    PreviewStroke.Color = Color3.fromRGB(28, 28, 28)
+    PreviewStroke.Color = Color3.fromRGB(30, 30, 30)
     PreviewStroke.Thickness = 1.2
+    PreviewStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     PreviewStroke.Parent = PreviewFrame
 
     -- Spaced Bridge Connector Bar
     local Bridge = Instance.new("Frame")
     Bridge.Name = "Bridge"
-    Bridge.Size = UDim2.new(0, 14, 0, 3)
-    Bridge.Position = UDim2.new(0, -14, 0.5, -1)
-    Bridge.BackgroundColor3 = Color3.fromRGB(34, 34, 34)
+    Bridge.Size = UDim2.new(0, 14, 0, 4)
+    Bridge.Position = UDim2.new(0, -14, 0.5, -2)
+    Bridge.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
     Bridge.BorderSizePixel = 0
+    Bridge.ZIndex = 5
     Bridge.Parent = PreviewFrame
 
     local BridgeCorner = Instance.new("UICorner")
@@ -1426,16 +1431,19 @@ local function BuildSaviorInterface()
     local PrevDivider = Instance.new("Frame")
     PrevDivider.Size = UDim2.new(1, -28, 0, 1)
     PrevDivider.Position = UDim2.new(0, 14, 0, 48)
-    PrevDivider.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+    PrevDivider.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
     PrevDivider.BorderSizePixel = 0
     PrevDivider.Parent = PreviewFrame
 
-    -- Viewport Container
+    -- Viewport Container with Ambient Light
     local Viewport = Instance.new("ViewportFrame")
     Viewport.Size = UDim2.new(1, -28, 1, -66)
     Viewport.Position = UDim2.new(0, 14, 0, 54)
     Viewport.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
     Viewport.BorderSizePixel = 0
+    Viewport.Ambient = Color3.fromRGB(180, 180, 180)
+    Viewport.LightColor = Color3.fromRGB(255, 255, 255)
+    Viewport.LightDirection = Vector3.new(-1, -2, -1)
     Viewport.Parent = PreviewFrame
 
     local VpCorner = Instance.new("UICorner")
@@ -1462,7 +1470,7 @@ local function BuildSaviorInterface()
         p.Name = name
         p.Size = size
         p.CFrame = cframe
-        p.Color = Color3.fromRGB(180, 180, 180)
+        p.Color = Color3.fromRGB(190, 190, 190)
         p.Material = Enum.Material.SmoothPlastic
         p.Anchored = true
         p.CanCollide = false
@@ -1480,7 +1488,7 @@ local function BuildSaviorInterface()
     Dummy.PrimaryPart = dTorso
     Dummy.Parent = Viewport
 
-    -- 2D Simulator Overlays on the Viewport
+    -- 2D Simulator Overlays on Viewport
     local PrevBox = Instance.new("Frame")
     PrevBox.Size = UDim2.new(0, 134, 0, 224)
     PrevBox.Position = UDim2.new(0.5, -67, 0.5, -112)
@@ -1593,7 +1601,7 @@ local function BuildSaviorInterface()
         PrevTracer.Visible = State.ESP.Tracer
         UpdatePreviewTracer()
 
-        local dummyColor = State.ESP.Chams and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 180)
+        local dummyColor = State.ESP.Chams and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(190, 190, 190)
         local dummyMaterial = State.ESP.Chams and Enum.Material.Neon or Enum.Material.SmoothPlastic
         for _, part in ipairs(Dummy:GetChildren()) do
             if part:IsA("BasePart") then
@@ -1768,7 +1776,7 @@ local InputBeganConn = Services.UserInputService.InputBegan:Connect(function(inp
         end
     end
 
-    -- Aimbot Key Activation (Supports both Keyboard and Mouse inputs)
+    -- Targeting Activation (Supports Keyboard and Mouse inputs)
     if IsKeyMatch(State.Aimbot.Keybind, input) then
         State.Aimbot.Active = true
     end
