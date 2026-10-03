@@ -1,7 +1,7 @@
 --[[
     Savior Hub - Universal Framework
     Comprehensive Client Instrumentation & Visual Projection System
-    Matte Black & Pure White Edition + Dynamic Live Preview Simulator + Settings Tab
+    Matte Black & Pure White Edition + Dynamic Live Preview Simulator + Player Options + Watermark
 ]]
 
 local Services = {
@@ -11,7 +11,8 @@ local Services = {
     TweenService = game:GetService("TweenService"),
     Workspace = game:GetService("Workspace"),
     CoreGui = game:GetService("CoreGui"),
-    HttpService = game:GetService("HttpService")
+    HttpService = game:GetService("HttpService"),
+    Stats = game:GetService("Stats")
 }
 
 local LocalPlayer = Services.Players.LocalPlayer
@@ -27,7 +28,8 @@ local State = {
         UsePrediction = false,
         PredictionValue = 0,
         FOVSize = 200,
-        Smoothness = 0.25,
+        SmoothnessX = 5,
+        SmoothnessY = 5,
         TargetPart = "Head",
         Active = false
     },
@@ -55,10 +57,21 @@ local State = {
             ChamsOutline = Color3.fromRGB(80, 80, 80)
         }
     },
+    Player = {
+        WalkSpeed = 16,
+        JumpPower = 50,
+        FieldOfView = 70,
+        ModifySpeed = false,
+        ModifyJump = false,
+        ModifyFOV = false
+    },
     UI = {
         Visible = true,
         ToggleKey = Enum.KeyCode.RightShift,
-        CurrentTab = "Main"
+        CurrentTab = "Main",
+        Watermark = true,
+        MinimizeBind = Enum.KeyCode.RightShift,
+        UnloadBind = Enum.KeyCode.Unknown
     },
     Links = {
         Discord = "https://discord.gg/saviorhub",
@@ -87,6 +100,13 @@ local function SafeSetClipboard(text)
         return true
     end
     return false
+end
+
+-- Angle Delta Normalizer (-pi to pi)
+local function AngleDelta(a, b)
+    local diff = (a - b) % (2 * math.pi)
+    if diff > math.pi then diff = diff - 2 * math.pi end
+    return diff
 end
 
 -- Target Bone Definitions
@@ -293,7 +313,7 @@ local function GetClosestTarget()
     return bestTarget
 end
 
--- Targeting Execution Step
+-- Targeting Execution Step with Independent Horizontal & Vertical Smoothing
 local function StepTargeting()
     local shouldAim = State.Aimbot.Enabled and (
         State.Aimbot.Keybind == Enum.KeyCode.Unknown or State.Aimbot.Active
@@ -307,12 +327,22 @@ local function StepTargeting()
             aimPos = aimPos + (target.Velocity * (State.Aimbot.PredictionValue * 0.015))
         end
 
-        local targetCFrame = CFrame.new(Camera.CFrame.Position, aimPos)
-        if State.Aimbot.Smoothness > 0 then
-            Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, math.clamp(1 - State.Aimbot.Smoothness, 0.05, 1))
-        else
-            Camera.CFrame = targetCFrame
-        end
+        local currentCFrame = Camera.CFrame
+        local targetCFrame = CFrame.new(currentCFrame.Position, aimPos)
+
+        local currentX, currentY, _ = currentCFrame:ToOrientation()
+        local targetX, targetY, _ = targetCFrame:ToOrientation()
+
+        local deltaY = AngleDelta(targetY, currentY)
+        local deltaX = AngleDelta(targetX, currentX)
+
+        local smoothXFactor = math.clamp(1 / math.max(State.Aimbot.SmoothnessX, 1), 0.02, 1)
+        local smoothYFactor = math.clamp(1 / math.max(State.Aimbot.SmoothnessY, 1), 0.02, 1)
+
+        local newY = currentY + (deltaY * smoothXFactor)
+        local newX = currentX + (deltaX * smoothYFactor)
+
+        Camera.CFrame = CFrame.new(currentCFrame.Position) * CFrame.Angles(newX, newY, 0)
     end
 end
 
@@ -486,7 +516,7 @@ local function StepVisuals()
 end
 
 -- ==============================================================================
--- GUI CONSTRUCTION: Savior Hub (Seamless Corner Curves + Fixed Keybinds + Live Pop-Out)
+-- GUI CONSTRUCTION: Savior Hub (Seamless Curves + Player Options + Watermark)
 -- ==============================================================================
 
 local ActiveConnections = {}
@@ -502,7 +532,67 @@ local function BuildSaviorInterface()
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-    -- Main Container Window (Matte Black, Unified Flawless Border)
+    -- ==========================================================================
+    -- TOP-RIGHT WATERMARK BADGE (Menu Name | FPS | Ping)
+    -- ==========================================================================
+    local WatermarkBadge = Instance.new("Frame")
+    WatermarkBadge.Name = "WatermarkBadge"
+    WatermarkBadge.Size = UDim2.new(0, 240, 0, 30)
+    WatermarkBadge.Position = UDim2.new(1, -255, 0, 16)
+    WatermarkBadge.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+    WatermarkBadge.BorderSizePixel = 0
+    WatermarkBadge.Visible = State.UI.Watermark
+    WatermarkBadge.Parent = ScreenGui
+
+    local WCorner = Instance.new("UICorner")
+    WCorner.CornerRadius = UDim.new(1, 0)
+    WCorner.Parent = WatermarkBadge
+
+    local WStroke = Instance.new("UIStroke")
+    WStroke.Color = Color3.fromRGB(32, 32, 32)
+    WStroke.Thickness = 1.2
+    WStroke.Parent = WatermarkBadge
+
+    local WatermarkLabel = Instance.new("TextLabel")
+    WatermarkLabel.Size = UDim2.new(1, 0, 1, 0)
+    WatermarkLabel.BackgroundTransparency = 1
+    WatermarkLabel.Text = "Savior Hub  |  FPS: 60  |  Ping: 0ms"
+    WatermarkLabel.Font = Enum.Font.GothamMedium
+    WatermarkLabel.TextSize = 11
+    WatermarkLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+    WatermarkLabel.Parent = WatermarkBadge
+
+    -- FPS & Ping Counter Pipeline
+    local frameCount = 0
+    local lastFpsUpdate = tick()
+    local currentFps = 60
+
+    local WatermarkConn = Services.RunService.RenderStepped:Connect(function()
+        frameCount = frameCount + 1
+        local now = tick()
+        if now - lastFpsUpdate >= 0.5 then
+            currentFps = math.floor(frameCount / (now - lastFpsUpdate))
+            frameCount = 0
+            lastFpsUpdate = now
+
+            local pingVal = 0
+            pcall(function()
+                pingVal = math.floor(LocalPlayer:GetNetworkPing() * 1000)
+            end)
+            if pingVal == 0 then
+                pcall(function()
+                    pingVal = math.floor(Services.Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
+                end)
+            end
+
+            if WatermarkBadge.Visible then
+                WatermarkLabel.Text = string.format("Savior Hub  |  FPS: %d  |  Ping: %dms", currentFps, pingVal)
+            end
+        end
+    end)
+    table.insert(ActiveConnections, WatermarkConn)
+
+    -- Main Container Window (Unified Seamless Border)
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
     MainFrame.Size = UDim2.new(0, 720, 0, 500)
@@ -522,7 +612,6 @@ local function BuildSaviorInterface()
     MainStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     MainStroke.Parent = MainFrame
 
-    -- Inner background panel ensuring zero corner clipping or seam defects
     local InnerBackground = Instance.new("Frame")
     InnerBackground.Size = UDim2.new(1, 0, 1, 0)
     InnerBackground.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
@@ -570,7 +659,7 @@ local function BuildSaviorInterface()
         end
     end)
 
-    -- Left Navigation Sidebar (Transparent background, no corner clashing)
+    -- Left Navigation Sidebar
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
     Sidebar.Size = UDim2.new(0, 175, 1, 0)
@@ -579,7 +668,6 @@ local function BuildSaviorInterface()
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = InnerBackground
 
-    -- Vertical Divider separating Sidebar from content
     local SidebarDivider = Instance.new("Frame")
     SidebarDivider.Size = UDim2.new(0, 1, 1, -28)
     SidebarDivider.Position = UDim2.new(1, -1, 0, 14)
@@ -587,7 +675,6 @@ local function BuildSaviorInterface()
     SidebarDivider.BorderSizePixel = 0
     SidebarDivider.Parent = Sidebar
 
-    -- Logo / Brand Header ("Savior Hub")
     local BrandContainer = Instance.new("Frame")
     BrandContainer.Size = UDim2.new(1, 0, 0, 60)
     BrandContainer.BackgroundTransparency = 1
@@ -612,9 +699,9 @@ local function BuildSaviorInterface()
     BrandTitle.TextXAlignment = Enum.TextXAlignment.Left
     BrandTitle.Parent = BrandContainer
 
-    -- Sidebar Navigation Tabs List
+    -- Navigation Tabs
     local NavContainer = Instance.new("Frame")
-    NavContainer.Size = UDim2.new(1, 0, 0, 120)
+    NavContainer.Size = UDim2.new(1, 0, 0, 160)
     NavContainer.Position = UDim2.new(0, 0, 0, 65)
     NavContainer.BackgroundTransparency = 1
     NavContainer.Parent = Sidebar
@@ -633,7 +720,7 @@ local function BuildSaviorInterface()
     local function CreateNavTab(name, iconId, tabKey, layoutOrder)
         local TabBtn = Instance.new("TextButton")
         TabBtn.Name = tabKey .. "Nav"
-        TabBtn.Size = UDim2.new(1, 0, 0, 38)
+        TabBtn.Size = UDim2.new(1, 0, 0, 36)
         TabBtn.BackgroundColor3 = (State.UI.CurrentTab == tabKey) and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(12, 12, 12)
         TabBtn.BorderSizePixel = 0
         TabBtn.Text = ""
@@ -676,7 +763,7 @@ local function BuildSaviorInterface()
         Txt.BackgroundTransparency = 1
         Txt.Text = name
         Txt.Font = Enum.Font.GothamMedium
-        Txt.TextSize = 13
+        Txt.TextSize = 12
         Txt.TextColor3 = (State.UI.CurrentTab == tabKey) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 160)
         Txt.TextXAlignment = Enum.TextXAlignment.Left
         Txt.Parent = TabBtn
@@ -704,7 +791,8 @@ local function BuildSaviorInterface()
     end
 
     local NavMain = CreateNavTab("Aimbot & ESP", "rbxassetid://6031265976", "Main", 1)
-    local NavSettings = CreateNavTab("Settings", "rbxassetid://6031280882", "Settings", 2)
+    local NavPlayer = CreateNavTab("Player Options", "rbxassetid://6031075931", "Player", 2)
+    local NavSettings = CreateNavTab("Settings", "rbxassetid://6031280882", "Settings", 3)
 
     -- Bottom Left Profile & Key Badge Box
     local ProfileBox = Instance.new("Frame")
@@ -784,59 +872,44 @@ local function BuildSaviorInterface()
     ContentMaster.BackgroundTransparency = 1
     ContentMaster.Parent = InnerBackground
 
-    -- View 1: Main Page
-    local MainPageView = Instance.new("Frame")
-    MainPageView.Name = "MainPageView"
-    MainPageView.Size = UDim2.new(1, 0, 1, 0)
-    MainPageView.BackgroundTransparency = 1
-    MainPageView.Visible = (State.UI.CurrentTab == "Main")
-    MainPageView.Parent = ContentMaster
+    local function MakePageView(name, visible)
+        local pv = Instance.new("Frame")
+        pv.Name = name
+        pv.Size = UDim2.new(1, 0, 1, 0)
+        pv.BackgroundTransparency = 1
+        pv.Visible = visible
+        pv.Parent = ContentMaster
 
-    local MainCardsLayout = Instance.new("UIListLayout")
-    MainCardsLayout.FillDirection = Enum.FillDirection.Horizontal
-    MainCardsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    MainCardsLayout.Padding = UDim.new(0, 14)
-    MainCardsLayout.Parent = MainPageView
+        local layout = Instance.new("UIListLayout")
+        layout.FillDirection = Enum.FillDirection.Horizontal
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0, 14)
+        layout.Parent = pv
 
-    local MainCardsPadding = Instance.new("UIPadding")
-    MainCardsPadding.PaddingLeft = UDim.new(0, 14)
-    MainCardsPadding.PaddingRight = UDim.new(0, 14)
-    MainCardsPadding.PaddingTop = UDim.new(0, 14)
-    MainCardsPadding.PaddingBottom = UDim.new(0, 14)
-    MainCardsPadding.Parent = MainPageView
+        local pad = Instance.new("UIPadding")
+        pad.PaddingLeft = UDim.new(0, 14)
+        pad.PaddingRight = UDim.new(0, 14)
+        pad.PaddingTop = UDim.new(0, 14)
+        pad.PaddingBottom = UDim.new(0, 14)
+        pad.Parent = pv
+        return pv
+    end
 
-    -- View 2: Settings Page
-    local SettingsPageView = Instance.new("Frame")
-    SettingsPageView.Name = "SettingsPageView"
-    SettingsPageView.Size = UDim2.new(1, 0, 1, 0)
-    SettingsPageView.BackgroundTransparency = 1
-    SettingsPageView.Visible = (State.UI.CurrentTab == "Settings")
-    SettingsPageView.Parent = ContentMaster
-
-    local SettingsCardsLayout = Instance.new("UIListLayout")
-    SettingsCardsLayout.FillDirection = Enum.FillDirection.Horizontal
-    SettingsCardsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    SettingsCardsLayout.Padding = UDim.new(0, 14)
-    SettingsCardsLayout.Parent = SettingsPageView
-
-    local SettingsCardsPadding = Instance.new("UIPadding")
-    SettingsCardsPadding.PaddingLeft = UDim.new(0, 14)
-    SettingsCardsPadding.PaddingRight = UDim.new(0, 14)
-    SettingsCardsPadding.PaddingTop = UDim.new(0, 14)
-    SettingsCardsPadding.PaddingBottom = UDim.new(0, 14)
-    SettingsCardsPadding.Parent = SettingsPageView
+    local MainPageView = MakePageView("MainPageView", State.UI.CurrentTab == "Main")
+    local PlayerPageView = MakePageView("PlayerPageView", State.UI.CurrentTab == "Player")
+    local SettingsPageView = MakePageView("SettingsPageView", State.UI.CurrentTab == "Settings")
 
     -- Toast Notification Label
     local ToastLabel = Instance.new("TextLabel")
-    ToastLabel.Size = UDim2.new(0, 280, 0, 34)
-    ToastLabel.Position = UDim2.new(0.5, -140, 0, -45)
-    ToastLabel.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+    ToastLabel.Size = UDim2.new(0, 300, 0, 34)
+    ToastLabel.Position = UDim2.new(0.5, -150, 0, -45)
+    ToastLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
     ToastLabel.BorderSizePixel = 0
     ToastLabel.Text = ""
     ToastLabel.Font = Enum.Font.GothamMedium
     ToastLabel.TextSize = 12
     ToastLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    ToastLabel.ZIndex = 20
+    ToastLabel.ZIndex = 25
     ToastLabel.Parent = MainFrame
 
     local ToastCorner = Instance.new("UICorner")
@@ -851,11 +924,11 @@ local function BuildSaviorInterface()
     local function ShowToast(msg)
         ToastLabel.Text = msg
         Services.TweenService:Create(ToastLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Position = UDim2.new(0.5, -140, 0, 15)
+            Position = UDim2.new(0.5, -150, 0, 15)
         }):Play()
-        task.delay(2.2, function()
+        task.delay(2.4, function()
             Services.TweenService:Create(ToastLabel, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-                Position = UDim2.new(0.5, -140, 0, -45)
+                Position = UDim2.new(0.5, -150, 0, -45)
             }):Play()
         end)
     end
@@ -871,10 +944,12 @@ local function BuildSaviorInterface()
             tabData.Text.TextColor3 = isSelected and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 160)
         end
         MainPageView.Visible = (newTabKey == "Main")
+        PlayerPageView.Visible = (newTabKey == "Player")
         SettingsPageView.Visible = (newTabKey == "Settings")
     end
 
     NavMain.MouseButton1Click:Connect(function() SwitchTab("Main") end)
+    NavPlayer.MouseButton1Click:Connect(function() SwitchTab("Player") end)
     NavSettings.MouseButton1Click:Connect(function() SwitchTab("Settings") end)
 
     -- Helper Component: Card Generator
@@ -1362,6 +1437,117 @@ local function BuildSaviorInterface()
         end)
     end
 
+    -- Helper Component: Bindable Action Row (Button + Keybind in Settings)
+    local function CreateBindableActionRow(parent, title, desc, defaultKey, onKeyChanged, onClick)
+        local Container = Instance.new("Frame")
+        Container.Size = UDim2.new(1, 0, 0, 48)
+        Container.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+        Container.BorderSizePixel = 0
+        Container.Parent = parent
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 10)
+        Corner.Parent = Container
+
+        local Stroke = Instance.new("UIStroke")
+        Stroke.Color = Color3.fromRGB(30, 30, 30)
+        Stroke.Thickness = 1
+        Stroke.Parent = Container
+
+        local TitleLbl = Instance.new("TextLabel")
+        TitleLbl.Size = UDim2.new(1, -170, 0, 18)
+        TitleLbl.Position = UDim2.new(0, 14, 0, 6)
+        TitleLbl.BackgroundTransparency = 1
+        TitleLbl.Text = title
+        TitleLbl.Font = Enum.Font.GothamBold
+        TitleLbl.TextSize = 12
+        TitleLbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+        TitleLbl.Parent = Container
+
+        local DescLbl = Instance.new("TextLabel")
+        DescLbl.Size = UDim2.new(1, -170, 0, 14)
+        DescLbl.Position = UDim2.new(0, 14, 0, 24)
+        DescLbl.BackgroundTransparency = 1
+        DescLbl.Text = desc
+        DescLbl.Font = Enum.Font.Gotham
+        DescLbl.TextSize = 10
+        DescLbl.TextColor3 = Color3.fromRGB(140, 140, 140)
+        DescLbl.TextXAlignment = Enum.TextXAlignment.Left
+        DescLbl.Parent = Container
+
+        -- Keybind Selector
+        local KeyBtn = Instance.new("TextButton")
+        KeyBtn.Size = UDim2.new(0, 70, 0, 26)
+        KeyBtn.Position = UDim2.new(1, -156, 0.5, -13)
+        KeyBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+        KeyBtn.BorderSizePixel = 0
+        KeyBtn.Text = ""
+        KeyBtn.AutoButtonColor = false
+        KeyBtn.Parent = Container
+
+        local KCorner = Instance.new("UICorner")
+        KCorner.CornerRadius = UDim.new(0, 6)
+        KCorner.Parent = KeyBtn
+
+        local KStroke = Instance.new("UIStroke")
+        KStroke.Color = Color3.fromRGB(38, 38, 38)
+        KStroke.Thickness = 1
+        KStroke.Parent = KeyBtn
+
+        local function FormatKeyText(key)
+            if not key or key == Enum.KeyCode.Unknown then return "None" end
+            return key.Name
+        end
+
+        local KeyText = Instance.new("TextLabel")
+        KeyText.Size = UDim2.new(1, 0, 1, 0)
+        KeyText.BackgroundTransparency = 1
+        KeyText.Text = FormatKeyText(defaultKey)
+        KeyText.Font = Enum.Font.GothamMedium
+        KeyText.TextSize = 11
+        KeyText.TextColor3 = Color3.fromRGB(220, 220, 220)
+        KeyText.Parent = KeyBtn
+
+        local listening = false
+        KeyBtn.MouseButton1Click:Connect(function()
+            listening = true
+            KeyText.Text = "..."
+            KStroke.Color = Color3.fromRGB(255, 255, 255)
+        end)
+
+        Services.UserInputService.InputBegan:Connect(function(input)
+            if listening and input.UserInputType == Enum.UserInputType.Keyboard then
+                local chosen = (input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace) and Enum.KeyCode.Unknown or input.KeyCode
+                listening = false
+                KStroke.Color = Color3.fromRGB(38, 38, 38)
+                KeyText.Text = FormatKeyText(chosen)
+                onKeyChanged(chosen)
+            end
+        end)
+
+        -- Clickable Execution Button
+        local ExecBtn = Instance.new("TextButton")
+        ExecBtn.Size = UDim2.new(0, 74, 0, 26)
+        ExecBtn.Position = UDim2.new(1, -80, 0.5, -13)
+        ExecBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        ExecBtn.BorderSizePixel = 0
+        ExecBtn.Text = "Execute"
+        ExecBtn.Font = Enum.Font.GothamBold
+        ExecBtn.TextSize = 11
+        ExecBtn.TextColor3 = Color3.fromRGB(10, 10, 10)
+        ExecBtn.AutoButtonColor = false
+        ExecBtn.Parent = Container
+
+        local ECorner = Instance.new("UICorner")
+        ECorner.CornerRadius = UDim.new(0, 6)
+        ECorner.Parent = ExecBtn
+
+        ExecBtn.MouseButton1Click:Connect(function()
+            onClick()
+        end)
+    end
+
     -- ==============================================================================
     -- LIVE VISUALS PREVIEW WINDOW (Pop-Out Spaced Connected Box)
     -- ==============================================================================
@@ -1386,7 +1572,6 @@ local function BuildSaviorInterface()
     PreviewStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     PreviewStroke.Parent = PreviewFrame
 
-    -- Spaced Bridge Connector Bar
     local Bridge = Instance.new("Frame")
     Bridge.Name = "Bridge"
     Bridge.Size = UDim2.new(0, 14, 0, 4)
@@ -1400,7 +1585,6 @@ local function BuildSaviorInterface()
     BridgeCorner.CornerRadius = UDim.new(1, 0)
     BridgeCorner.Parent = Bridge
 
-    -- Preview Header
     local PrevHeader = Instance.new("Frame")
     PrevHeader.Size = UDim2.new(1, 0, 0, 48)
     PrevHeader.BackgroundTransparency = 1
@@ -1435,7 +1619,6 @@ local function BuildSaviorInterface()
     PrevDivider.BorderSizePixel = 0
     PrevDivider.Parent = PreviewFrame
 
-    -- Viewport Container with Ambient Light
     local Viewport = Instance.new("ViewportFrame")
     Viewport.Size = UDim2.new(1, -28, 1, -66)
     Viewport.Position = UDim2.new(0, 14, 0, 54)
@@ -1461,7 +1644,6 @@ local function BuildSaviorInterface()
     Viewport.CurrentCamera = VpCamera
     VpCamera.Parent = Viewport
 
-    -- Standard Character Mannequin
     local Dummy = Instance.new("Model")
     Dummy.Name = "PreviewDummy"
 
@@ -1488,7 +1670,6 @@ local function BuildSaviorInterface()
     Dummy.PrimaryPart = dTorso
     Dummy.Parent = Viewport
 
-    -- 2D Simulator Overlays on Viewport
     local PrevBox = Instance.new("Frame")
     PrevBox.Size = UDim2.new(0, 134, 0, 224)
     PrevBox.Position = UDim2.new(0.5, -67, 0.5, -112)
@@ -1634,7 +1815,9 @@ local function BuildSaviorInterface()
         end
     end)
 
-    -- Populate View 1: Aimbot Controls Card
+    -- ==============================================================================
+    -- TAB 1: MAIN PAGE (Aimbot Controls & ESP Visuals)
+    -- ==============================================================================
     local AimCard = CreateCard(MainPageView, "Aimbot Controls", "Configure aim bot settings", 1)
     CreateMasterRow(AimCard, State.Aimbot.Keybind, function(newKey)
         State.Aimbot.Keybind = newKey
@@ -1662,7 +1845,14 @@ local function BuildSaviorInterface()
         State.Aimbot.FOVSize = val
     end)
 
-    -- Populate View 1: ESP Visuals Card
+    CreateSliderRow(AimCard, "Horizontal Smoothing", 1, 30, State.Aimbot.SmoothnessX, function(val)
+        State.Aimbot.SmoothnessX = val
+    end)
+
+    CreateSliderRow(AimCard, "Vertical Smoothing", 1, 30, State.Aimbot.SmoothnessY, function(val)
+        State.Aimbot.SmoothnessY = val
+    end)
+
     local ESPCard = CreateCard(MainPageView, "ESP Visuals", "Configure ESP settings", 2)
     CreateMasterRow(ESPCard, State.ESP.Keybind, function(newKey)
         State.ESP.Keybind = newKey
@@ -1720,7 +1910,180 @@ local function BuildSaviorInterface()
         State.ESP.MaxDistance = val
     end)
 
-    -- Populate View 2: Settings (Community & Controls)
+    -- ==============================================================================
+    -- TAB 2: PLAYER OPTIONS (Movement Modifiers & Teleportation Utility)
+    -- ==============================================================================
+    local MovementCard = CreateCard(PlayerPageView, "Movement Modifiers", "Local character adjustments", 1)
+
+    CreateToggleRow(MovementCard, "Enable WalkSpeed", false, State.Player.ModifySpeed, function(val)
+        State.Player.ModifySpeed = val
+        if not val and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = 16
+        end
+    end)
+
+    CreateSliderRow(MovementCard, "Walk Speed", 16, 250, State.Player.WalkSpeed, function(val)
+        State.Player.WalkSpeed = val
+        if State.Player.ModifySpeed and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            LocalPlayer.Character:FindFirstChildOfClass("Humanoid").WalkSpeed = val
+        end
+    end)
+
+    CreateToggleRow(MovementCard, "Enable JumpPower", false, State.Player.ModifyJump, function(val)
+        State.Player.ModifyJump = val
+        if not val and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            hum.JumpPower = 50
+            hum.UseJumpPower = true
+        end
+    end)
+
+    CreateSliderRow(MovementCard, "Jump Power", 50, 300, State.Player.JumpPower, function(val)
+        State.Player.JumpPower = val
+        if State.Player.ModifyJump and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            hum.UseJumpPower = true
+            hum.JumpPower = val
+        end
+    end)
+
+    CreateToggleRow(MovementCard, "Enable Custom FOV", false, State.Player.ModifyFOV, function(val)
+        State.Player.ModifyFOV = val
+        if not val then
+            Camera.FieldOfView = 70
+        end
+    end)
+
+    CreateSliderRow(MovementCard, "Field of View", 60, 120, State.Player.FieldOfView, function(val)
+        State.Player.FieldOfView = val
+        if State.Player.ModifyFOV then
+            Camera.FieldOfView = val
+        end
+    end)
+
+    -- Persistent Player Stat Pipeline
+    local PlayerConn = Services.RunService.RenderStepped:Connect(function()
+        if LocalPlayer.Character then
+            local hum = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                if State.Player.ModifySpeed then
+                    hum.WalkSpeed = State.Player.WalkSpeed
+                end
+                if State.Player.ModifyJump then
+                    hum.UseJumpPower = true
+                    hum.JumpPower = State.Player.JumpPower
+                end
+            end
+        end
+        if State.Player.ModifyFOV then
+            Camera.FieldOfView = State.Player.FieldOfView
+        end
+    end)
+    table.insert(ActiveConnections, PlayerConn)
+
+    local TeleportCard = CreateCard(PlayerPageView, "Teleport Utility", "Instantly navigate to player", 2)
+
+    -- Teleport Target Input Field
+    local TpContainer = Instance.new("Frame")
+    TpContainer.Size = UDim2.new(1, 0, 0, 94)
+    TpContainer.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+    TpContainer.BorderSizePixel = 0
+    TpContainer.Parent = TeleportCard
+
+    local TpCorner = Instance.new("UICorner")
+    TpCorner.CornerRadius = UDim.new(0, 10)
+    TpCorner.Parent = TpContainer
+
+    local TpStroke = Instance.new("UIStroke")
+    TpStroke.Color = Color3.fromRGB(30, 30, 30)
+    TpStroke.Thickness = 1
+    TpStroke.Parent = TpContainer
+
+    local TpLabel = Instance.new("TextLabel")
+    TpLabel.Size = UDim2.new(1, -20, 0, 20)
+    TpLabel.Position = UDim2.new(0, 12, 0, 10)
+    TpLabel.BackgroundTransparency = 1
+    TpLabel.Text = "Teleport to Player"
+    TpLabel.Font = Enum.Font.GothamBold
+    TpLabel.TextSize = 12
+    TpLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TpLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TpLabel.Parent = TpContainer
+
+    local TpInput = Instance.new("TextBox")
+    TpInput.Size = UDim2.new(1, -24, 0, 28)
+    TpInput.Position = UDim2.new(0, 12, 0, 34)
+    TpInput.BackgroundColor3 = Color3.fromRGB(12, 12, 12)
+    TpInput.BorderSizePixel = 0
+    TpInput.PlaceholderText = "Enter player username..."
+    TpInput.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
+    TpInput.Text = ""
+    TpInput.Font = Enum.Font.Gotham
+    TpInput.TextSize = 12
+    TpInput.TextColor3 = Color3.fromRGB(240, 240, 240)
+    TpInput.ClearTextOnFocus = false
+    TpInput.Parent = TpContainer
+
+    local InCorner = Instance.new("UICorner")
+    InCorner.CornerRadius = UDim.new(0, 6)
+    InCorner.Parent = TpInput
+
+    local InStroke = Instance.new("UIStroke")
+    InStroke.Color = Color3.fromRGB(34, 34, 34)
+    InStroke.Thickness = 1
+    InStroke.Parent = TpInput
+
+    -- Execute Teleport Button
+    local TpExecBtn = Instance.new("TextButton")
+    TpExecBtn.Size = UDim2.new(1, 0, 0, 36)
+    TpExecBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    TpExecBtn.BorderSizePixel = 0
+    TpExecBtn.Text = "Execute Teleport"
+    TpExecBtn.Font = Enum.Font.GothamBold
+    TpExecBtn.TextSize = 12
+    TpExecBtn.TextColor3 = Color3.fromRGB(10, 10, 10)
+    TpExecBtn.AutoButtonColor = false
+    TpExecBtn.Parent = TeleportCard
+
+    local TpBtnCorner = Instance.new("UICorner")
+    TpBtnCorner.CornerRadius = UDim.new(0, 10)
+    TpBtnCorner.Parent = TpExecBtn
+
+    TpExecBtn.MouseButton1Click:Connect(function()
+        local query = string.lower(TpInput.Text)
+        if query == "" then
+            ShowToast("Please enter a player name!")
+            return
+        end
+
+        local foundTarget = nil
+        for _, p in ipairs(Services.Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                local uName = string.lower(p.Name)
+                local dName = string.lower(p.DisplayName)
+                if string.find(uName, query) or string.find(dName, query) then
+                    foundTarget = p
+                    break
+                end
+            end
+        end
+
+        if foundTarget and foundTarget.Character and foundTarget.Character:FindFirstChild("HumanoidRootPart") then
+            if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local targetCFrame = foundTarget.Character.HumanoidRootPart.CFrame
+                LocalPlayer.Character.HumanoidRootPart.CFrame = targetCFrame + Vector3.new(0, 3, 0)
+                ShowToast("Teleported to " .. foundTarget.DisplayName .. "!")
+            else
+                ShowToast("Your character root was not found.")
+            end
+        else
+            ShowToast("Player '" .. TpInput.Text .. "' not found.")
+        end
+    end)
+
+    -- ==============================================================================
+    -- TAB 3: SETTINGS (Community Links & Interface Controls)
+    -- ==============================================================================
     local CommunityCard = CreateCard(SettingsPageView, "Community Links", "Official socials & updates", 1)
     CreateActionButton(CommunityCard, "Join Discord", "Copy discord invite to clipboard", "rbxassetid://6031075931", function()
         if SafeSetClipboard(State.Links.Discord) then
@@ -1738,14 +2101,23 @@ local function BuildSaviorInterface()
         end
     end)
 
-    local ControlsCard = CreateCard(SettingsPageView, "Interface Management", "Console state & key bindings", 2)
-    CreateActionButton(ControlsCard, "Minimize Console", "Hide interface (Press RightShift to reopen)", "rbxassetid://6031091004", function()
-        State.UI.Visible = false
-        MainFrame.Visible = false
-        PreviewFrame.Visible = false
+    CreateToggleRow(CommunityCard, "Show Watermark", false, State.UI.Watermark, function(val)
+        State.UI.Watermark = val
+        WatermarkBadge.Visible = val
     end)
 
-    CreateActionButton(ControlsCard, "Unload System", "Completely remove interface and scripts", "rbxassetid://6031094678", function()
+    local ControlsCard = CreateCard(SettingsPageView, "Interface Management", "Console state & key bindings", 2)
+
+    local function ToggleMinimize()
+        State.UI.Visible = not State.UI.Visible
+        MainFrame.Visible = State.UI.Visible
+        PreviewFrame.Visible = State.UI.Visible and State.ESP.Enabled
+        if not State.UI.Visible then
+            ShowToast("Console minimized (Press bind to reopen)")
+        end
+    end
+
+    local function UnloadSystem()
         for _, conn in ipairs(ActiveConnections) do
             pcall(function() conn:Disconnect() end)
         end
@@ -1754,25 +2126,34 @@ local function BuildSaviorInterface()
         end
         FOVCircle:Remove()
         ScreenGui:Destroy()
-    end)
+    end
+
+    CreateBindableActionRow(ControlsCard, "Minimize Console", "Hide interface window", State.UI.MinimizeBind, function(newKey)
+        State.UI.MinimizeBind = newKey
+    end, ToggleMinimize)
+
+    CreateBindableActionRow(ControlsCard, "Unload System", "Completely remove interface", State.UI.UnloadBind, function(newKey)
+        State.UI.UnloadBind = newKey
+    end, UnloadSystem)
 
     ScreenGui.Parent = guiParent
-    return ScreenGui, MainFrame, PreviewFrame
+    return ScreenGui, MainFrame, PreviewFrame, ToggleMinimize, UnloadSystem
 end
 
 -- ==============================================================================
 -- INITIALIZATION & BINDINGS
 -- ==============================================================================
 
-local GuiInstance, MainFrameInstance, PreviewFrameInstance = BuildSaviorInterface()
+local GuiInstance, MainFrameInstance, PreviewFrameInstance, ToggleMinimizeFn, UnloadFn = BuildSaviorInterface()
 
 -- Visibility / Menu Keybind
 local InputBeganConn = Services.UserInputService.InputBegan:Connect(function(input, processed)
-    if input.KeyCode == State.UI.ToggleKey then
-        State.UI.Visible = not State.UI.Visible
-        MainFrameInstance.Visible = State.UI.Visible
-        if PreviewFrameInstance then
-            PreviewFrameInstance.Visible = State.UI.Visible and State.ESP.Enabled
+    if not processed then
+        if input.KeyCode == State.UI.ToggleKey or (State.UI.MinimizeBind ~= Enum.KeyCode.Unknown and input.KeyCode == State.UI.MinimizeBind) then
+            ToggleMinimizeFn()
+        end
+        if State.UI.UnloadBind ~= Enum.KeyCode.Unknown and input.KeyCode == State.UI.UnloadBind then
+            UnloadFn()
         end
     end
 
