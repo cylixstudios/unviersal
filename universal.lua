@@ -34,6 +34,7 @@ local State = {
         TargetPart = "Head", -- "Head", "Body", "Torso", "HumanoidRootPart", "Closest"
         BodyPriority = false,
         Magic = false, -- Magic (Defeats building, shoots through walls & structures)
+        MagicRadius = 350, -- Magic bullet acquisition radius
         Active = false
     },
     ESP = {
@@ -331,8 +332,10 @@ end
 
 local LockedTarget = nil
 
--- Target Acquisition with Target Locking
-local function GetClosestTarget()
+-- Target Acquisition with Target Locking & Custom Radius
+local function GetClosestTarget(customRadius)
+    local maxDist = customRadius or State.Aimbot.FOVSize
+
     -- Check if locked target is still valid and tracking
     if LockedTarget and LockedTarget.Player and LockedTarget.Player.Parent then
         local char = LockedTarget.Player.Character
@@ -341,7 +344,7 @@ local function GetClosestTarget()
 
         if humanoid and humanoid.Health > 0 and targetPart then
             local isTeammate = State.Aimbot.TeamCheck and IsTeammate(LockedTarget.Player)
-            local isOccluded = State.Aimbot.WallCheck and not IsVisible(targetPart)
+            local isOccluded = not State.Aimbot.Magic and State.Aimbot.WallCheck and not IsVisible(targetPart)
 
             if not isTeammate and not isOccluded then
                 local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
@@ -349,7 +352,7 @@ local function GetClosestTarget()
                 local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
 
                 -- Keep lock if target is on screen and within 1.7x FOV tolerance during jumps
-                if onScreen and dist <= (State.Aimbot.FOVSize * 1.7) then
+                if onScreen and dist <= (maxDist * 1.7) then
                     return {
                         Player = LockedTarget.Player,
                         Part = targetPart,
@@ -361,9 +364,11 @@ local function GetClosestTarget()
         end
     end
 
-    LockedTarget = nil
+    if not customRadius then
+        LockedTarget = nil
+    end
     local bestTarget = nil
-    local shortestDist = State.Aimbot.FOVSize
+    local shortestDist = maxDist
     local mousePos = Services.UserInputService:GetMouseLocation()
 
     for _, player in ipairs(Services.Players:GetPlayers()) do
@@ -374,7 +379,7 @@ local function GetClosestTarget()
 
             if humanoid and humanoid.Health > 0 and targetPart then
                 if not (State.Aimbot.TeamCheck and IsTeammate(player)) then
-                    if not (State.Aimbot.WallCheck and not State.Aimbot.Magic and not IsVisible(targetPart)) then
+                    if State.Aimbot.Magic or not (State.Aimbot.WallCheck and not IsVisible(targetPart)) then
                         local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
                         if onScreen then
                             local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
@@ -394,7 +399,9 @@ local function GetClosestTarget()
         end
     end
 
-    LockedTarget = bestTarget
+    if not customRadius then
+        LockedTarget = bestTarget
+    end
     return bestTarget
 end
 
@@ -825,7 +832,7 @@ local function SetMagicState(enabled)
     end
 end
 
--- Ultra-Fast Metamethod Hook (Only queries target when actively aiming/shooting)
+-- Universal Magic Bullet Penetration Hook (Fires directly through walls & player builds)
 pcall(function()
     if hookmetamethod and typeof(hookmetamethod) == "function" then
         local oldNamecall
@@ -833,20 +840,43 @@ pcall(function()
             local method = getnamecallmethod()
             local args = {...}
 
-            -- Only intercept when Magic is enabled AND aim is active (eliminates all background raycast lag)
-            if State.Aimbot.Magic and (State.Aimbot.Active or LockedTarget) and not checkcaller() then
+            if State.Aimbot.Magic and not checkcaller() then
                 if method == "Raycast" and self == Services.Workspace then
-                    local target = LockedTarget or GetClosestTarget()
+                    local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius)
                     if target and target.Part then
                         local origin = args[1]
-                        local targetDir = (target.Part.Position - origin).Unit * 1000
-                        args[2] = targetDir
+                        local targetPos = target.Part.Position
+                        local rawDir = typeof(args[2]) == "Vector3" and args[2] or (targetPos - origin)
+                        local dirUnit = (rawDir.Magnitude > 0) and rawDir.Unit or Camera.CFrame.LookVector
+                        -- Start ray 0.4 studs before target hitbox pointing straight through it
+                        -- This guarantees 100% genuine RaycastResult while completely bypassing builds/walls in between
+                        args[1] = targetPos - (dirUnit * 0.4)
+                        args[2] = dirUnit * 2
                         return oldNamecall(self, table.unpack(args))
                     end
                 elseif method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRay" then
-                    local target = LockedTarget or GetClosestTarget()
+                    local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius)
                     if target and target.Part then
                         return target.Part, target.Part.Position, Vector3.new(0, 1, 0), target.Part.Material
+                    end
+                elseif method == "FireServer" and typeof(self) == "Instance" and self:IsA("RemoteEvent") then
+                    local rName = string.lower(self.Name)
+                    if string.find(rName, "shoot") or string.find(rName, "hit") or string.find(rName, "fire") or 
+                       string.find(rName, "bullet") or string.find(rName, "attack") or string.find(rName, "damage") then
+                        local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius)
+                        if target and target.Part then
+                            for i, arg in ipairs(args) do
+                                if typeof(arg) == "Instance" and arg:IsA("BasePart") then
+                                    args[i] = target.Part
+                                elseif typeof(arg) == "Vector3" then
+                                    local diff = (arg - target.Part.Position).Magnitude
+                                    if diff > 1 and diff < 300 then
+                                        args[i] = target.Part.Position
+                                    end
+                                end
+                            end
+                            return oldNamecall(self, table.unpack(args))
+                        end
                     end
                 end
             end
@@ -855,9 +885,9 @@ pcall(function()
 
         local oldIndex
         oldIndex = hookmetamethod(game, "__index", function(self, key)
-            if State.Aimbot.Magic and (State.Aimbot.Active or LockedTarget) and not checkcaller() then
+            if State.Aimbot.Magic and not checkcaller() then
                 if typeof(self) == "Instance" and self:IsA("Mouse") and (key == "Hit" or key == "Target") then
-                    local target = LockedTarget or GetClosestTarget()
+                    local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius)
                     if target and target.Part then
                         if key == "Hit" then
                             return target.Part.CFrame
@@ -2157,6 +2187,10 @@ local function BuildSaviorInterface()
         SetMagicState(val)
         ShowToast(val and "Magic: Enabled (Shooting through builds active)" or "Magic: Disabled")
     end, nil, NextAim())
+
+    CreateSliderRow(AimCard, "Magic Hit Radius", 50, 800, State.Aimbot.MagicRadius, function(val)
+        State.Aimbot.MagicRadius = val
+    end, NextAim())
 
     CreateToggleRow(AimCard, "Team Check", true, State.Aimbot.TeamCheck, function(val)
         State.Aimbot.TeamCheck = val
