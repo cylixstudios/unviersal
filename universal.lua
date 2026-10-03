@@ -1,7 +1,7 @@
 --[[
-    Azure Universal Framework
-    Comprehensive Client Instrumentation & Visual Overlay System
-    Self-contained Luau / Loadstring Ready
+    Savior Hub - Universal Framework
+    Comprehensive Client Instrumentation & Visual Projection System
+    Matte Black & Pure White Edition
 ]]
 
 local Services = {
@@ -49,10 +49,10 @@ local State = {
             Name = Color3.fromRGB(255, 255, 255),
             Distance = Color3.fromRGB(200, 200, 200),
             Skeleton = Color3.fromRGB(255, 255, 255),
-            Health = Color3.fromRGB(0, 255, 120),
+            Health = Color3.fromRGB(255, 255, 255),
             Tracer = Color3.fromRGB(255, 255, 255),
-            ChamsFill = Color3.fromRGB(60, 130, 246),
-            ChamsOutline = Color3.fromRGB(255, 255, 255)
+            ChamsFill = Color3.fromRGB(255, 255, 255),
+            ChamsOutline = Color3.fromRGB(80, 80, 80)
         }
     },
     UI = {
@@ -94,7 +94,7 @@ FOVCircle.NumSides = 64
 FOVCircle.Radius = State.Aimbot.FOVSize
 FOVCircle.Filled = false
 FOVCircle.Color = Color3.fromRGB(255, 255, 255)
-FOVCircle.Transparency = 0.75
+FOVCircle.Transparency = 0.85
 FOVCircle.Visible = false
 
 -- Storage for Rendered Entities
@@ -184,8 +184,8 @@ local function SetupEntity(player)
     -- Highlight setup
     data.Highlight.FillColor = State.ESP.Colors.ChamsFill
     data.Highlight.OutlineColor = State.ESP.Colors.ChamsOutline
-    data.Highlight.FillTransparency = 0.5
-    data.Highlight.OutlineTransparency = 0.1
+    data.Highlight.FillTransparency = 0.6
+    data.Highlight.OutlineTransparency = 0.2
     data.Highlight.Enabled = false
 
     local targetParent = Services.CoreGui or LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -369,7 +369,7 @@ local function StepVisuals()
                     local fillHeight = height * healthPct
                     data.HealthBarFill.Size = Vector2.new(barWidth - 2, fillHeight)
                     data.HealthBarFill.Position = Vector2.new(barX + 1, boxY + (height - fillHeight))
-                    data.HealthBarFill.Color = Color3.fromHSV(healthPct * 0.33, 1, 1)
+                    data.HealthBarFill.Color = Color3.fromRGB(255, 255, 255)
                     data.HealthBarFill.Visible = true
                 else
                     data.HealthBarOutline.Visible = false
@@ -465,26 +465,26 @@ local function StepVisuals()
 end
 
 -- ==============================================================================
--- GUI CONSTRUCTION: Exact Azure Theme Implementation matching image (1).webp
+-- GUI CONSTRUCTION: Savior Hub (Matte Black & Pure White Theme)
 -- ==============================================================================
 
-local function BuildAzureInterface()
+local function BuildSaviorInterface()
     local guiParent = Services.CoreGui or LocalPlayer:FindFirstChildOfClass("PlayerGui")
 
-    local existingGui = guiParent:FindFirstChild("AzureUniversalScreen")
+    local existingGui = guiParent:FindFirstChild("SaviorHubScreen")
     if existingGui then existingGui:Destroy() end
 
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "AzureUniversalScreen"
+    ScreenGui.Name = "SaviorHubScreen"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-    -- Main Container Window
+    -- Main Container Window (Matte Black)
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 680, 0, 480)
-    MainFrame.Position = UDim2.new(0.5, -340, 0.5, -240)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(15, 18, 26)
+    MainFrame.Size = UDim2.new(0, 700, 0, 490)
+    MainFrame.Position = UDim2.new(0.5, -350, 0.5, -245)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10) -- Matte Black
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
@@ -494,7 +494,7 @@ local function BuildAzureInterface()
     MainCorner.Parent = MainFrame
 
     local MainStroke = Instance.new("UIStroke")
-    MainStroke.Color = Color3.fromRGB(28, 35, 50)
+    MainStroke.Color = Color3.fromRGB(30, 30, 30)
     MainStroke.Thickness = 1
     MainStroke.Parent = MainFrame
 
@@ -503,7 +503,7 @@ local function BuildAzureInterface()
     local dragInput, dragStart, startPos
 
     MainFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
             dragStart = input.Position
             startPos = MainFrame.Position
@@ -517,7 +517,7 @@ local function BuildAzureInterface()
     end)
 
     MainFrame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement then
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
@@ -537,20 +537,20 @@ local function BuildAzureInterface()
     -- Left Navigation Sidebar
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
-    Sidebar.Size = UDim2.new(0, 160, 1, 0)
+    Sidebar.Size = UDim2.new(0, 170, 1, 0)
     Sidebar.Position = UDim2.new(0, 0, 0, 0)
-    Sidebar.BackgroundColor3 = Color3.fromRGB(11, 14, 20)
+    Sidebar.BackgroundColor3 = Color3.fromRGB(7, 7, 7)
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
 
     local SidebarBorder = Instance.new("Frame")
     SidebarBorder.Size = UDim2.new(0, 1, 1, 0)
     SidebarBorder.Position = UDim2.new(1, -1, 0, 0)
-    SidebarBorder.BackgroundColor3 = Color3.fromRGB(28, 35, 50)
+    SidebarBorder.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
     SidebarBorder.BorderSizePixel = 0
     SidebarBorder.Parent = Sidebar
 
-    -- Logo / Brand Header
+    -- Logo / Brand Header ("Savior Hub")
     local BrandContainer = Instance.new("Frame")
     BrandContainer.Size = UDim2.new(1, 0, 0, 56)
     BrandContainer.BackgroundTransparency = 1
@@ -558,28 +558,28 @@ local function BuildAzureInterface()
 
     local BrandIcon = Instance.new("ImageLabel")
     BrandIcon.Size = UDim2.new(0, 18, 0, 18)
-    BrandIcon.Position = UDim2.new(0, 18, 0.5, -9)
+    BrandIcon.Position = UDim2.new(0, 16, 0.5, -9)
     BrandIcon.BackgroundTransparency = 1
-    BrandIcon.Image = "rbxassetid://6031265976" -- Minimalist viewfinder / reticle icon
-    BrandIcon.ImageColor3 = Color3.fromRGB(160, 175, 200)
+    BrandIcon.Image = "rbxassetid://6031075931"
+    BrandIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
     BrandIcon.Parent = BrandContainer
 
     local BrandTitle = Instance.new("TextLabel")
     BrandTitle.Size = UDim2.new(1, -44, 1, 0)
-    BrandTitle.Position = UDim2.new(0, 44, 0, 0)
+    BrandTitle.Position = UDim2.new(0, 42, 0, 0)
     BrandTitle.BackgroundTransparency = 1
-    BrandTitle.Text = "Azure"
-    BrandTitle.Font = Enum.Font.GothamMedium
+    BrandTitle.Text = "Savior Hub"
+    BrandTitle.Font = Enum.Font.GothamBold
     BrandTitle.TextSize = 15
-    BrandTitle.TextColor3 = Color3.fromRGB(215, 225, 245)
+    BrandTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
     BrandTitle.TextXAlignment = Enum.TextXAlignment.Left
     BrandTitle.Parent = BrandContainer
 
     -- Sidebar Tab Navigation Button
     local TabButton = Instance.new("Frame")
     TabButton.Size = UDim2.new(1, -20, 0, 40)
-    TabButton.Position = UDim2.new(0, 10, 0, 70)
-    TabButton.BackgroundColor3 = Color3.fromRGB(19, 24, 34)
+    TabButton.Position = UDim2.new(0, 10, 0, 68)
+    TabButton.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
     TabButton.BorderSizePixel = 0
     TabButton.Parent = Sidebar
 
@@ -590,7 +590,7 @@ local function BuildAzureInterface()
     local ActiveIndicator = Instance.new("Frame")
     ActiveIndicator.Size = UDim2.new(0, 3, 0, 20)
     ActiveIndicator.Position = UDim2.new(0, 0, 0.5, -10)
-    ActiveIndicator.BackgroundColor3 = Color3.fromRGB(70, 140, 255)
+    ActiveIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     ActiveIndicator.BorderSizePixel = 0
     ActiveIndicator.Parent = TabButton
 
@@ -602,8 +602,8 @@ local function BuildAzureInterface()
     TabIcon.Size = UDim2.new(0, 16, 0, 16)
     TabIcon.Position = UDim2.new(0, 14, 0.5, -8)
     TabIcon.BackgroundTransparency = 1
-    TabIcon.Image = "rbxassetid://6031075931"
-    TabIcon.ImageColor3 = Color3.fromRGB(220, 230, 250)
+    TabIcon.Image = "rbxassetid://6031265976"
+    TabIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
     TabIcon.Parent = TabButton
 
     local TabText = Instance.new("TextLabel")
@@ -613,14 +613,80 @@ local function BuildAzureInterface()
     TabText.Text = "Aimbot & ESP"
     TabText.Font = Enum.Font.GothamMedium
     TabText.TextSize = 13
-    TabText.TextColor3 = Color3.fromRGB(230, 238, 255)
+    TabText.TextColor3 = Color3.fromRGB(255, 255, 255)
     TabText.TextXAlignment = Enum.TextXAlignment.Left
     TabText.Parent = TabButton
 
+    -- Bottom Left Profile & Key Badge Box
+    local ProfileBox = Instance.new("Frame")
+    ProfileBox.Name = "ProfileBox"
+    ProfileBox.Size = UDim2.new(1, -20, 0, 54)
+    ProfileBox.Position = UDim2.new(0, 10, 1, -66)
+    ProfileBox.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    ProfileBox.BorderSizePixel = 0
+    ProfileBox.Parent = Sidebar
+
+    local ProfileCorner = Instance.new("UICorner")
+    ProfileCorner.CornerRadius = UDim.new(0, 8)
+    ProfileCorner.Parent = ProfileBox
+
+    local ProfileStroke = Instance.new("UIStroke")
+    ProfileStroke.Color = Color3.fromRGB(28, 28, 28)
+    ProfileStroke.Thickness = 1
+    ProfileStroke.Parent = ProfileBox
+
+    -- Avatar circular image
+    local AvatarImage = Instance.new("ImageLabel")
+    AvatarImage.Name = "AvatarImage"
+    AvatarImage.Size = UDim2.new(0, 36, 0, 36)
+    AvatarImage.Position = UDim2.new(0, 9, 0.5, -18)
+    AvatarImage.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    AvatarImage.BorderSizePixel = 0
+    AvatarImage.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
+    AvatarImage.Parent = ProfileBox
+
+    local AvatarCorner = Instance.new("UICorner")
+    AvatarCorner.CornerRadius = UDim.new(1, 0)
+    AvatarCorner.Parent = AvatarImage
+
+    task.spawn(function()
+        local thumb, isReady = Services.Players:GetUserThumbnailAsync(
+            LocalPlayer.UserId,
+            Enum.ThumbnailType.HeadShot,
+            Enum.ThumbnailSize.Size48x48
+        )
+        if thumb and thumb ~= "" then
+            AvatarImage.Image = thumb
+        end
+    end)
+
+    local PlayerNameLabel = Instance.new("TextLabel")
+    PlayerNameLabel.Size = UDim2.new(1, -54, 0, 18)
+    PlayerNameLabel.Position = UDim2.new(0, 52, 0, 9)
+    PlayerNameLabel.BackgroundTransparency = 1
+    PlayerNameLabel.Text = LocalPlayer.DisplayName or LocalPlayer.Name
+    PlayerNameLabel.Font = Enum.Font.GothamBold
+    PlayerNameLabel.TextSize = 12
+    PlayerNameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PlayerNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    PlayerNameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    PlayerNameLabel.Parent = ProfileBox
+
+    local KeyBadgeLabel = Instance.new("TextLabel")
+    KeyBadgeLabel.Size = UDim2.new(1, -54, 0, 16)
+    KeyBadgeLabel.Position = UDim2.new(0, 52, 0, 27)
+    KeyBadgeLabel.BackgroundTransparency = 1
+    KeyBadgeLabel.Text = "key : Free"
+    KeyBadgeLabel.Font = Enum.Font.GothamMedium
+    KeyBadgeLabel.TextSize = 11
+    KeyBadgeLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+    KeyBadgeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    KeyBadgeLabel.Parent = ProfileBox
+
     -- Right Content Area (Two Columns)
     local ContentArea = Instance.new("Frame")
-    ContentArea.Size = UDim2.new(1, -160, 1, 0)
-    ContentArea.Position = UDim2.new(0, 160, 0, 0)
+    ContentArea.Size = UDim2.new(1, -170, 1, 0)
+    ContentArea.Position = UDim2.new(0, 170, 0, 0)
     ContentArea.BackgroundTransparency = 1
     ContentArea.Parent = MainFrame
 
@@ -637,12 +703,12 @@ local function BuildAzureInterface()
     CardsPadding.PaddingBottom = UDim.new(0, 14)
     CardsPadding.Parent = ContentArea
 
-    -- Helper Component: Card Generator
+    -- Helper Component: Card Generator (Matte Black with Crisp White Text)
     local function CreateCard(title, subtitle, layoutOrder)
         local Card = Instance.new("Frame")
         Card.Name = title .. "Card"
         Card.Size = UDim2.new(0.5, -7, 1, 0)
-        Card.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
+        Card.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
         Card.BorderSizePixel = 0
         Card.LayoutOrder = layoutOrder
         Card.Parent = ContentArea
@@ -652,7 +718,7 @@ local function BuildAzureInterface()
         CardCorner.Parent = Card
 
         local CardStroke = Instance.new("UIStroke")
-        CardStroke.Color = Color3.fromRGB(28, 35, 52)
+        CardStroke.Color = Color3.fromRGB(26, 26, 26)
         CardStroke.Thickness = 1
         CardStroke.Parent = Card
 
@@ -668,7 +734,7 @@ local function BuildAzureInterface()
         TitleLabel.Text = title
         TitleLabel.Font = Enum.Font.GothamBold
         TitleLabel.TextSize = 14
-        TitleLabel.TextColor3 = Color3.fromRGB(220, 230, 250)
+        TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
         TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
         TitleLabel.Parent = Header
 
@@ -679,14 +745,14 @@ local function BuildAzureInterface()
         SubtitleLabel.Text = subtitle
         SubtitleLabel.Font = Enum.Font.Gotham
         SubtitleLabel.TextSize = 11
-        SubtitleLabel.TextColor3 = Color3.fromRGB(115, 130, 160)
+        SubtitleLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
         SubtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
         SubtitleLabel.Parent = Header
 
         local HeaderDivider = Instance.new("Frame")
         HeaderDivider.Size = UDim2.new(1, -28, 0, 1)
         HeaderDivider.Position = UDim2.new(0, 14, 0, 48)
-        HeaderDivider.BackgroundColor3 = Color3.fromRGB(28, 35, 50)
+        HeaderDivider.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
         HeaderDivider.BorderSizePixel = 0
         HeaderDivider.Parent = Card
 
@@ -696,7 +762,7 @@ local function BuildAzureInterface()
         Scroll.BackgroundTransparency = 1
         Scroll.BorderSizePixel = 0
         Scroll.ScrollBarThickness = 3
-        Scroll.ScrollBarImageColor3 = Color3.fromRGB(45, 55, 80)
+        Scroll.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 40)
         Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
         Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
         Scroll.Parent = Card
@@ -716,7 +782,7 @@ local function BuildAzureInterface()
         return Scroll
     end
 
-    -- Helper Component: Master Row with Keybind Button & Master Toggle
+    -- Helper Component: Master Row with Keybind Button & Master Switch
     local function CreateMasterRow(parent, defaultKey, onKeybindChanged, defaultActive, onToggleChanged)
         local Row = Instance.new("Frame")
         Row.Size = UDim2.new(1, 0, 0, 32)
@@ -728,7 +794,7 @@ local function BuildAzureInterface()
         local KeyBtn = Instance.new("TextButton")
         KeyBtn.Size = UDim2.new(0, 80, 0, 24)
         KeyBtn.Position = UDim2.new(0, 0, 0.5, -12)
-        KeyBtn.BackgroundColor3 = Color3.fromRGB(24, 30, 44)
+        KeyBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
         KeyBtn.BorderSizePixel = 0
         KeyBtn.Text = ""
         KeyBtn.AutoButtonColor = false
@@ -739,7 +805,7 @@ local function BuildAzureInterface()
         KeyCorner.Parent = KeyBtn
 
         local KeyStroke = Instance.new("UIStroke")
-        KeyStroke.Color = Color3.fromRGB(38, 48, 70)
+        KeyStroke.Color = Color3.fromRGB(34, 34, 34)
         KeyStroke.Thickness = 1
         KeyStroke.Parent = KeyBtn
 
@@ -748,7 +814,7 @@ local function BuildAzureInterface()
         KeyIcon.Position = UDim2.new(0, 8, 0.5, -6)
         KeyIcon.BackgroundTransparency = 1
         KeyIcon.Image = "rbxassetid://6031265976"
-        KeyIcon.ImageColor3 = Color3.fromRGB(150, 165, 195)
+        KeyIcon.ImageColor3 = Color3.fromRGB(200, 200, 200)
         KeyIcon.Parent = KeyBtn
 
         local KeyText = Instance.new("TextLabel")
@@ -758,8 +824,16 @@ local function BuildAzureInterface()
         KeyText.Text = typeof(defaultKey) == "EnumItem" and defaultKey.Name or "None"
         KeyText.Font = Enum.Font.GothamMedium
         KeyText.TextSize = 11
-        KeyText.TextColor3 = Color3.fromRGB(190, 205, 235)
+        KeyText.TextColor3 = Color3.fromRGB(240, 240, 240)
         KeyText.Parent = KeyBtn
+
+        -- Smooth hover animation
+        KeyBtn.MouseEnter:Connect(function()
+            Services.TweenService:Create(KeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(28, 28, 28)}):Play()
+        end)
+        KeyBtn.MouseLeave:Connect(function()
+            Services.TweenService:Create(KeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}):Play()
+        end)
 
         local listening = false
         KeyBtn.MouseButton1Click:Connect(function()
@@ -781,11 +855,11 @@ local function BuildAzureInterface()
             end
         end)
 
-        -- Master Switch
+        -- Master Switch (White Accent)
         local Switch = Instance.new("TextButton")
         Switch.Size = UDim2.new(0, 36, 0, 20)
         Switch.Position = UDim2.new(1, -36, 0.5, -10)
-        Switch.BackgroundColor3 = defaultActive and Color3.fromRGB(70, 140, 255) or Color3.fromRGB(32, 40, 58)
+        Switch.BackgroundColor3 = defaultActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(26, 26, 26)
         Switch.BorderSizePixel = 0
         Switch.Text = ""
         Switch.AutoButtonColor = false
@@ -795,10 +869,15 @@ local function BuildAzureInterface()
         SwitchCorner.CornerRadius = UDim.new(1, 0)
         SwitchCorner.Parent = Switch
 
+        local SwitchStroke = Instance.new("UIStroke")
+        SwitchStroke.Color = Color3.fromRGB(38, 38, 38)
+        SwitchStroke.Thickness = 1
+        SwitchStroke.Parent = Switch
+
         local Knob = Instance.new("Frame")
         Knob.Size = UDim2.new(0, 14, 0, 14)
         Knob.Position = defaultActive and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-        Knob.BackgroundColor3 = Color3.fromRGB(240, 245, 255)
+        Knob.BackgroundColor3 = defaultActive and Color3.fromRGB(10, 10, 10) or Color3.fromRGB(200, 200, 200)
         Knob.BorderSizePixel = 0
         Knob.Parent = Switch
 
@@ -810,15 +889,21 @@ local function BuildAzureInterface()
         Switch.MouseButton1Click:Connect(function()
             active = not active
             local targetPos = active and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-            local targetColor = active and Color3.fromRGB(70, 140, 255) or Color3.fromRGB(32, 40, 58)
+            local targetColor = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(26, 26, 26)
+            local knobColor = active and Color3.fromRGB(10, 10, 10) or Color3.fromRGB(200, 200, 200)
 
-            Services.TweenService:Create(Knob, TweenInfo.new(0.2), {Position = targetPos}):Play()
-            Services.TweenService:Create(Switch, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
+            Services.TweenService:Create(Knob, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = targetPos,
+                BackgroundColor3 = knobColor
+            }):Play()
+            Services.TweenService:Create(Switch, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundColor3 = targetColor
+            }):Play()
             onToggleChanged(active)
         end)
     end
 
-    -- Helper Component: Toggle Row with optional Sub-Menu Button (...)
+    -- Helper Component: Toggle Row with Animation Fades
     local function CreateToggleRow(parent, name, hasSubmenu, defaultActive, onToggleChanged, onSubmenuClicked)
         local Row = Instance.new("Frame")
         Row.Size = UDim2.new(1, 0, 0, 28)
@@ -832,7 +917,7 @@ local function BuildAzureInterface()
         Label.Text = name
         Label.Font = Enum.Font.Gotham
         Label.TextSize = 12
-        Label.TextColor3 = Color3.fromRGB(195, 210, 235)
+        Label.TextColor3 = Color3.fromRGB(230, 230, 230)
         Label.TextXAlignment = Enum.TextXAlignment.Left
         Label.Parent = Row
 
@@ -841,12 +926,12 @@ local function BuildAzureInterface()
             local SubBtn = Instance.new("TextButton")
             SubBtn.Size = UDim2.new(0, 22, 0, 18)
             SubBtn.Position = UDim2.new(1, -62, 0.5, -9)
-            SubBtn.BackgroundColor3 = Color3.fromRGB(26, 32, 46)
+            SubBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
             SubBtn.BorderSizePixel = 0
             SubBtn.Text = "..."
             SubBtn.Font = Enum.Font.GothamBold
             SubBtn.TextSize = 10
-            SubBtn.TextColor3 = Color3.fromRGB(130, 145, 175)
+            SubBtn.TextColor3 = Color3.fromRGB(160, 160, 160)
             SubBtn.AutoButtonColor = false
             SubBtn.Parent = Row
 
@@ -854,16 +939,28 @@ local function BuildAzureInterface()
             SubCorner.CornerRadius = UDim.new(0, 4)
             SubCorner.Parent = SubBtn
 
+            local SubStroke = Instance.new("UIStroke")
+            SubStroke.Color = Color3.fromRGB(34, 34, 34)
+            SubStroke.Thickness = 1
+            SubStroke.Parent = SubBtn
+
+            SubBtn.MouseEnter:Connect(function()
+                Services.TweenService:Create(SubBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(30, 30, 30)}):Play()
+            end)
+            SubBtn.MouseLeave:Connect(function()
+                Services.TweenService:Create(SubBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(20, 20, 20)}):Play()
+            end)
+
             SubBtn.MouseButton1Click:Connect(function()
                 if onSubmenuClicked then onSubmenuClicked() end
             end)
         end
 
-        -- Switch toggle
+        -- Switch toggle (White Accent)
         local Switch = Instance.new("TextButton")
         Switch.Size = UDim2.new(0, 32, 0, 18)
         Switch.Position = UDim2.new(1, -32, 0.5, -9)
-        Switch.BackgroundColor3 = defaultActive and Color3.fromRGB(70, 140, 255) or Color3.fromRGB(30, 38, 54)
+        Switch.BackgroundColor3 = defaultActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(24, 24, 24)
         Switch.BorderSizePixel = 0
         Switch.Text = ""
         Switch.AutoButtonColor = false
@@ -873,10 +970,15 @@ local function BuildAzureInterface()
         SwitchCorner.CornerRadius = UDim.new(1, 0)
         SwitchCorner.Parent = Switch
 
+        local SwitchStroke = Instance.new("UIStroke")
+        SwitchStroke.Color = Color3.fromRGB(36, 36, 36)
+        SwitchStroke.Thickness = 1
+        SwitchStroke.Parent = Switch
+
         local Knob = Instance.new("Frame")
         Knob.Size = UDim2.new(0, 12, 0, 12)
         Knob.Position = defaultActive and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
-        Knob.BackgroundColor3 = Color3.fromRGB(240, 245, 255)
+        Knob.BackgroundColor3 = defaultActive and Color3.fromRGB(10, 10, 10) or Color3.fromRGB(190, 190, 190)
         Knob.BorderSizePixel = 0
         Knob.Parent = Switch
 
@@ -888,15 +990,21 @@ local function BuildAzureInterface()
         Switch.MouseButton1Click:Connect(function()
             active = not active
             local targetPos = active and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
-            local targetColor = active and Color3.fromRGB(70, 140, 255) or Color3.fromRGB(30, 38, 54)
+            local targetColor = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(24, 24, 24)
+            local knobColor = active and Color3.fromRGB(10, 10, 10) or Color3.fromRGB(190, 190, 190)
 
-            Services.TweenService:Create(Knob, TweenInfo.new(0.2), {Position = targetPos}):Play()
-            Services.TweenService:Create(Switch, TweenInfo.new(0.2), {BackgroundColor3 = targetColor}):Play()
+            Services.TweenService:Create(Knob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = targetPos,
+                BackgroundColor3 = knobColor
+            }):Play()
+            Services.TweenService:Create(Switch, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                BackgroundColor3 = targetColor
+            }):Play()
             onToggleChanged(active)
         end)
     end
 
-    -- Helper Component: Slider Row
+    -- Helper Component: Slider Row with Global Dragging (Fixed so it NEVER gets stuck)
     local function CreateSliderRow(parent, name, minVal, maxVal, defaultVal, onValueChanged)
         local Container = Instance.new("Frame")
         Container.Size = UDim2.new(1, 0, 0, 42)
@@ -910,7 +1018,7 @@ local function BuildAzureInterface()
         Title.Text = name
         Title.Font = Enum.Font.Gotham
         Title.TextSize = 12
-        Title.TextColor3 = Color3.fromRGB(195, 210, 235)
+        Title.TextColor3 = Color3.fromRGB(230, 230, 230)
         Title.TextXAlignment = Enum.TextXAlignment.Left
         Title.Parent = Container
 
@@ -921,35 +1029,42 @@ local function BuildAzureInterface()
         ValueLabel.Text = tostring(defaultVal)
         ValueLabel.Font = Enum.Font.GothamMedium
         ValueLabel.TextSize = 12
-        ValueLabel.TextColor3 = Color3.fromRGB(175, 190, 220)
+        ValueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
         ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
         ValueLabel.Parent = Container
 
-        local Track = Instance.new("Frame")
-        Track.Size = UDim2.new(1, 0, 0, 4)
-        Track.Position = UDim2.new(0, 0, 0, 26)
-        Track.BackgroundColor3 = Color3.fromRGB(30, 38, 54)
-        Track.BorderSizePixel = 0
-        Track.Parent = Container
+        local TrackBtn = Instance.new("TextButton")
+        TrackBtn.Size = UDim2.new(1, 0, 0, 6)
+        TrackBtn.Position = UDim2.new(0, 0, 0, 25)
+        TrackBtn.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+        TrackBtn.BorderSizePixel = 0
+        TrackBtn.Text = ""
+        TrackBtn.AutoButtonColor = false
+        TrackBtn.Parent = Container
 
         local TrackCorner = Instance.new("UICorner")
         TrackCorner.CornerRadius = UDim.new(1, 0)
-        TrackCorner.Parent = Track
+        TrackCorner.Parent = TrackBtn
+
+        local TrackStroke = Instance.new("UIStroke")
+        TrackStroke.Color = Color3.fromRGB(34, 34, 34)
+        TrackStroke.Thickness = 1
+        TrackStroke.Parent = TrackBtn
 
         local Fill = Instance.new("Frame")
         local initialRatio = math.clamp((defaultVal - minVal) / (maxVal - minVal), 0, 1)
         Fill.Size = UDim2.new(initialRatio, 0, 1, 0)
-        Fill.BackgroundColor3 = Color3.fromRGB(70, 140, 255)
+        Fill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         Fill.BorderSizePixel = 0
-        Fill.Parent = Track
+        Fill.Parent = TrackBtn
 
         local FillCorner = Instance.new("UICorner")
         FillCorner.CornerRadius = UDim.new(1, 0)
         FillCorner.Parent = Fill
 
         local Knob = Instance.new("Frame")
-        Knob.Size = UDim2.new(0, 10, 0, 10)
-        Knob.Position = UDim2.new(1, -5, 0.5, -5)
+        Knob.Size = UDim2.new(0, 12, 0, 12)
+        Knob.Position = UDim2.new(1, -6, 0.5, -6)
         Knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         Knob.BorderSizePixel = 0
         Knob.Parent = Fill
@@ -958,34 +1073,45 @@ local function BuildAzureInterface()
         KnobCorner.CornerRadius = UDim.new(1, 0)
         KnobCorner.Parent = Knob
 
+        local KnobStroke = Instance.new("UIStroke")
+        KnobStroke.Color = Color3.fromRGB(15, 15, 15)
+        KnobStroke.Thickness = 1.5
+        KnobStroke.Parent = Knob
+
         local isDragging = false
-        local function UpdateValue(inputPos)
-            local trackX = Track.AbsolutePosition.X
-            local trackWidth = Track.AbsoluteSize.X
-            local ratio = math.clamp((inputPos.X - trackX) / trackWidth, 0, 1)
-            local value = math.floor(minVal + ((maxVal - minVal) * ratio))
+
+        local function UpdateFromPosition(inputX)
+            local trackX = TrackBtn.AbsolutePosition.X
+            local trackWidth = TrackBtn.AbsoluteSize.X
+            if trackWidth <= 0 then return end
+            local ratio = math.clamp((inputX - trackX) / trackWidth, 0, 1)
+            local val = math.floor(minVal + ((maxVal - minVal) * ratio) + 0.5)
 
             Fill.Size = UDim2.new(ratio, 0, 1, 0)
-            ValueLabel.Text = tostring(value)
-            onValueChanged(value)
+            ValueLabel.Text = tostring(val)
+            onValueChanged(val)
         end
 
-        Track.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        TrackBtn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
                 isDragging = true
-                UpdateValue(input.Position)
+                UpdateFromPosition(input.Position.X)
+                Services.TweenService:Create(Knob, TweenInfo.new(0.15), {Size = UDim2.new(0, 14, 0, 14)}):Play()
             end
         end)
 
         Services.UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                isDragging = false
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                if isDragging then
+                    isDragging = false
+                    Services.TweenService:Create(Knob, TweenInfo.new(0.15), {Size = UDim2.new(0, 12, 0, 12)}):Play()
+                end
             end
         end)
 
         Services.UserInputService.InputChanged:Connect(function(input)
-            if isDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                UpdateValue(input.Position)
+            if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+                UpdateFromPosition(input.Position.X)
             end
         end)
     end
@@ -1074,7 +1200,7 @@ end
 -- INITIALIZATION & BINDINGS
 -- ==============================================================================
 
-local GuiInstance, MainFrameInstance = BuildAzureInterface()
+local GuiInstance, MainFrameInstance = BuildSaviorInterface()
 
 -- Visibility / Menu Keybind
 Services.UserInputService.InputBegan:Connect(function(input, processed)
@@ -1120,4 +1246,4 @@ Services.RunService.RenderStepped:Connect(function()
     StepVisuals()
 end)
 
-print("[Azure Universal] System initialized successfully. Press RightShift to toggle interface.")
+print("[Savior Hub] System initialized successfully. Press RightShift to toggle interface.")
