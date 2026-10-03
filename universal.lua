@@ -23,6 +23,7 @@ local State = {
     Aimbot = {
         Enabled = false,
         Keybind = Enum.UserInputType.MouseButton2,
+        AimMode = "Hold", -- "Hold", "Toggle"
         TeamCheck = false,
         WallCheck = false,
         UsePrediction = false,
@@ -32,6 +33,7 @@ local State = {
         SmoothnessY = 5,
         TargetPart = "Head", -- "Head", "Body", "Torso", "HumanoidRootPart", "Closest"
         BodyPriority = false,
+        Magic = false, -- Magic (Defeats building, shoots through walls & structures)
         Active = false
     },
     ESP = {
@@ -252,6 +254,7 @@ end
 -- Raycasting Visibility Check
 local function IsVisible(targetPart)
     if not targetPart then return false end
+    if State.Aimbot.Magic then return true end -- Magic bypasses all obstacle & build checks
     local origin = Camera.CFrame.Position
     local direction = targetPart.Position - origin
 
@@ -371,7 +374,7 @@ local function GetClosestTarget()
 
             if humanoid and humanoid.Health > 0 and targetPart then
                 if not (State.Aimbot.TeamCheck and IsTeammate(player)) then
-                    if not (State.Aimbot.WallCheck and not IsVisible(targetPart)) then
+                    if not (State.Aimbot.WallCheck and not State.Aimbot.Magic and not IsVisible(targetPart)) then
                         local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
                         if onScreen then
                             local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
@@ -688,6 +691,133 @@ local function StepVisuals()
         end
     end
 end
+
+-- ==============================================================================
+-- MAGIC ENGINE: Penetrate Player Builds & Shoot Through Walls
+-- ==============================================================================
+
+local BuildOriginalState = {}
+
+local function IsPlayerBuild(instance)
+    if not instance or not instance:IsA("BasePart") then return false end
+    if instance.Parent == Services.Workspace.Terrain then return false end
+
+    -- Ignore local character and other player characters
+    for _, p in ipairs(Services.Players:GetPlayers()) do
+        if p.Character and instance:IsDescendantOf(p.Character) then
+            return false
+        end
+    end
+
+    local name = string.lower(instance.Name)
+    local pName = instance.Parent and string.lower(instance.Parent.Name) or ""
+
+    if string.find(pName, "build") or string.find(pName, "structure") or string.find(pName, "debris") or string.find(pName, "construct") then
+        return true
+    end
+
+    if string.find(name, "wall") or string.find(name, "ramp") or string.find(name, "floor") or
+       string.find(name, "stair") or string.find(name, "roof") or string.find(name, "cone") or
+       string.find(name, "build") or string.find(name, "wood") or string.find(name, "brick") or
+       string.find(name, "metal") or string.find(name, "stone") or string.find(name, "barrier") or
+       string.find(name, "box") or string.find(name, "cover") then
+        return true
+    end
+
+    return false
+end
+
+local function ApplyMagicBuild(part)
+    if not BuildOriginalState[part] then
+        BuildOriginalState[part] = {
+            CanQuery = part.CanQuery,
+            CanCollide = part.CanCollide,
+            Transparency = part.Transparency
+        }
+    end
+    pcall(function()
+        part.CanQuery = false
+        part.CanCollide = false
+        if part.Transparency < 0.5 then
+            part.Transparency = 0.55
+        end
+    end)
+end
+
+local function RestoreMagicBuild(part)
+    local orig = BuildOriginalState[part]
+    if orig and part and part.Parent then
+        pcall(function()
+            part.CanQuery = orig.CanQuery
+            part.CanCollide = orig.CanCollide
+            part.Transparency = orig.Transparency
+        end)
+    end
+    BuildOriginalState[part] = nil
+end
+
+local function StepMagicEngine()
+    if not State.Aimbot.Magic then
+        if next(BuildOriginalState) ~= nil then
+            for part, _ in pairs(BuildOriginalState) do
+                RestoreMagicBuild(part)
+            end
+        end
+        return
+    end
+
+    for _, obj in ipairs(Services.Workspace:GetDescendants()) do
+        if IsPlayerBuild(obj) then
+            ApplyMagicBuild(obj)
+        end
+    end
+end
+
+-- Metamethod Hooking for Universal Magic Penetration
+pcall(function()
+    if hookmetamethod and typeof(hookmetamethod) == "function" then
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            local method = getnamecallmethod()
+            local args = {...}
+
+            if State.Aimbot.Magic and not checkcaller() then
+                if method == "Raycast" and self == Services.Workspace then
+                    local target = GetClosestTarget()
+                    if target and target.Part then
+                        local origin = args[1]
+                        local targetDir = (target.Part.Position - origin).Unit * 1000
+                        args[2] = targetDir
+                        return oldNamecall(self, table.unpack(args))
+                    end
+                elseif method == "FindPartOnRayWithIgnoreList" or method == "FindPartOnRay" then
+                    local target = GetClosestTarget()
+                    if target and target.Part then
+                        return target.Part, target.Part.Position, Vector3.new(0, 1, 0), target.Part.Material
+                    end
+                end
+            end
+            return oldNamecall(self, ...)
+        end)
+
+        local oldIndex
+        oldIndex = hookmetamethod(game, "__index", function(self, key)
+            if State.Aimbot.Magic and not checkcaller() then
+                if typeof(self) == "Instance" and self:IsA("Mouse") and (key == "Hit" or key == "Target") then
+                    local target = GetClosestTarget()
+                    if target and target.Part then
+                        if key == "Hit" then
+                            return target.Part.CFrame
+                        elseif key == "Target" then
+                            return target.Part
+                        end
+                    end
+                end
+            end
+            return oldIndex(self, key)
+        end)
+    end
+end)
 
 -- ==============================================================================
 -- GUI CONSTRUCTION: Savior Hub
@@ -1788,31 +1918,7 @@ local function BuildSaviorInterface()
     Viewport.CurrentCamera = VpCamera
     VpCamera.Parent = Viewport
 
-    local Dummy = Instance.new("Model")
-    Dummy.Name = "PreviewDummy"
-
-    local function MakePart(name, size, cframe)
-        local p = Instance.new("Part")
-        p.Name = name
-        p.Size = size
-        p.CFrame = cframe
-        p.Color = Color3.fromRGB(190, 190, 190)
-        p.Material = Enum.Material.SmoothPlastic
-        p.Anchored = true
-        p.CanCollide = false
-        p.Parent = Dummy
-        return p
-    end
-
-    local dHead = MakePart("Head", Vector3.new(1.2, 1.2, 1.2), CFrame.new(0, 1.9, 0))
-    local dTorso = MakePart("Torso", Vector3.new(2, 2, 1), CFrame.new(0, 0.3, 0))
-    local dLeftArm = MakePart("Left Arm", Vector3.new(1, 2, 1), CFrame.new(-1.6, 0.3, 0))
-    local dRightArm = MakePart("Right Arm", Vector3.new(1, 2, 1), CFrame.new(1.6, 0.3, 0))
-    local dLeftLeg = MakePart("Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.55, -1.7, 0))
-    local dRightLeg = MakePart("Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.55, -1.7, 0))
-
-    Dummy.PrimaryPart = dTorso
-    Dummy.Parent = Viewport
+    -- Visuals Preview Showcase Container (3D dummy model removed; clean floating showcase preserved)
 
     local PrevBox = Instance.new("Frame")
     PrevBox.Size = UDim2.new(0, 134, 0, 224)
@@ -1933,14 +2039,7 @@ local function BuildSaviorInterface()
         PrevHealthText.TextColor3 = rainbowCol
         PrevTracer.BackgroundColor3 = rainbowCol
 
-        local dummyColor = State.ESP.Chams and rainbowCol or Color3.fromRGB(190, 190, 190)
-        local dummyMaterial = State.ESP.Chams and Enum.Material.Neon or Enum.Material.SmoothPlastic
-        for _, part in ipairs(Dummy:GetChildren()) do
-            if part:IsA("BasePart") then
-                part.Color = dummyColor
-                part.Material = dummyMaterial
-            end
-        end
+        -- 3D mannequin model removed; showcase elements dynamically update below
     end
 
     local function TogglePreview(visible)
@@ -1982,6 +2081,15 @@ local function BuildSaviorInterface()
         State.Aimbot.Enabled = val
     end, NextAim())
 
+    CreateSelectorRow(AimCard, "Aim Key Mode", {"Hold", "Toggle"}, State.Aimbot.AimMode, function(selected)
+        State.Aimbot.AimMode = selected
+        if selected == "Hold" then
+            State.Aimbot.Active = false
+            LockedTarget = nil
+        end
+        ShowToast("Aim Mode set to: " .. selected)
+    end, NextAim())
+
     CreateSelectorRow(AimCard, "Target Hitbox", {"Head", "Body", "Torso", "HumanoidRootPart", "Closest"}, State.Aimbot.TargetPart, function(selected)
         State.Aimbot.TargetPart = selected
         ShowToast("Target Hitbox set to: " .. selected)
@@ -1990,6 +2098,11 @@ local function BuildSaviorInterface()
     CreateToggleRow(AimCard, "Prioritize Body", false, State.Aimbot.BodyPriority, function(val)
         State.Aimbot.BodyPriority = val
         ShowToast(val and "Body targeting prioritized" or "Default hitbox prioritized")
+    end, nil, NextAim())
+
+    CreateToggleRow(AimCard, "Magic (Shoot Through Builds)", true, State.Aimbot.Magic, function(val)
+        State.Aimbot.Magic = val
+        ShowToast(val and "Magic: Enabled (Shooting through builds active)" or "Magic: Disabled")
     end, nil, NextAim())
 
     CreateToggleRow(AimCard, "Team Check", true, State.Aimbot.TeamCheck, function(val)
@@ -2284,14 +2397,14 @@ local function BuildSaviorInterface()
     end)
 
     -- ==============================================================================
-    -- TAB 3: SETTINGS (Polished Function Boxes + System Management)
+    -- TAB 3: SETTINGS (Open Spot Function Squares + System Management)
     -- ==============================================================================
     local InterfaceCard = CreateCard(SettingsPageView, "Interface & Socials", "Hub customization and official links", 1)
     local SystemCard = CreateCard(SettingsPageView, "Session Management", "Runtime session controls & tools", 2)
 
-    local function CreateFunctionBox(parent, title, subtitle, iconId, layoutOrder)
+    local function CreateFunctionSquare(parent, title, subtitle, iconId, height, layoutOrder)
         local Box = Instance.new("Frame")
-        Box.Size = UDim2.new(1, 0, 0, 56)
+        Box.Size = UDim2.new(1, 0, 0, height or 78)
         Box.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
         Box.BorderSizePixel = 0
         Box.LayoutOrder = layoutOrder or 1
@@ -2307,27 +2420,27 @@ local function BuildSaviorInterface()
         BStroke.Parent = Box
 
         local IconBadge = Instance.new("Frame")
-        IconBadge.Size = UDim2.new(0, 32, 0, 32)
-        IconBadge.Position = UDim2.new(0, 12, 0.5, -16)
-        IconBadge.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+        IconBadge.Size = UDim2.new(0, 26, 0, 26)
+        IconBadge.Position = UDim2.new(0, 12, 0, 10)
+        IconBadge.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
         IconBadge.BorderSizePixel = 0
         IconBadge.Parent = Box
 
         local IbCorner = Instance.new("UICorner")
-        IbCorner.CornerRadius = UDim.new(0, 8)
+        IbCorner.CornerRadius = UDim.new(0, 6)
         IbCorner.Parent = IconBadge
 
         local Icon = Instance.new("ImageLabel")
-        Icon.Size = UDim2.new(0, 18, 0, 18)
-        Icon.Position = UDim2.new(0.5, -9, 0.5, -9)
+        Icon.Size = UDim2.new(0, 15, 0, 15)
+        Icon.Position = UDim2.new(0.5, -7, 0.5, -7)
         Icon.BackgroundTransparency = 1
         Icon.Image = iconId
         Icon.ImageColor3 = Color3.fromRGB(240, 240, 240)
         Icon.Parent = IconBadge
 
         local TitleL = Instance.new("TextLabel")
-        TitleL.Size = UDim2.new(1, -170, 0, 18)
-        TitleL.Position = UDim2.new(0, 52, 0, 10)
+        TitleL.Size = UDim2.new(1, -52, 0, 16)
+        TitleL.Position = UDim2.new(0, 44, 0, 8)
         TitleL.BackgroundTransparency = 1
         TitleL.Text = title
         TitleL.Font = Enum.Font.GothamBold
@@ -2337,8 +2450,8 @@ local function BuildSaviorInterface()
         TitleL.Parent = Box
 
         local SubL = Instance.new("TextLabel")
-        SubL.Size = UDim2.new(1, -170, 0, 16)
-        SubL.Position = UDim2.new(0, 52, 0, 28)
+        SubL.Size = UDim2.new(1, -52, 0, 14)
+        SubL.Position = UDim2.new(0, 44, 0, 24)
         SubL.BackgroundTransparency = 1
         SubL.Text = subtitle
         SubL.Font = Enum.Font.Gotham
@@ -2350,17 +2463,17 @@ local function BuildSaviorInterface()
         return Box
     end
 
-    -- 1. Menu Keybind Box
-    local MenuKeyBox = CreateFunctionBox(InterfaceCard, "Menu Keybind", "Key to toggle hub visibility", "rbxassetid://6031265976", 1)
+    -- 1. Menu Keybind Square (Button in Open Spot)
+    local MenuKeyBox = CreateFunctionSquare(InterfaceCard, "Menu Keybind", "Key to toggle hub visibility", "rbxassetid://6031265976", 78, 1)
     local MKeyBtn = Instance.new("TextButton")
-    MKeyBtn.Size = UDim2.new(0, 84, 0, 26)
-    MKeyBtn.Position = UDim2.new(1, -94, 0.5, -13)
-    MKeyBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    MKeyBtn.Size = UDim2.new(1, -24, 0, 26)
+    MKeyBtn.Position = UDim2.new(0, 12, 0, 44)
+    MKeyBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     MKeyBtn.BorderSizePixel = 0
-    MKeyBtn.Text = State.UI.ToggleKey.Name
+    MKeyBtn.Text = "Menu Key: [" .. State.UI.ToggleKey.Name .. "]"
     MKeyBtn.Font = Enum.Font.GothamBold
     MKeyBtn.TextSize = 11
-    MKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MKeyBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
     MKeyBtn.AutoButtonColor = false
     MKeyBtn.Parent = MenuKeyBox
 
@@ -2369,14 +2482,24 @@ local function BuildSaviorInterface()
     MkCorner.Parent = MKeyBtn
 
     local MkStroke = Instance.new("UIStroke")
-    MkStroke.Color = Color3.fromRGB(40, 40, 40)
+    MkStroke.Color = Color3.fromRGB(38, 38, 38)
     MkStroke.Thickness = 1
     MkStroke.Parent = MKeyBtn
 
     local mListening = false
+    MKeyBtn.MouseEnter:Connect(function()
+        if not mListening then
+            Services.TweenService:Create(MKeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(32, 32, 32)}):Play()
+        end
+    end)
+    MKeyBtn.MouseLeave:Connect(function()
+        if not mListening then
+            Services.TweenService:Create(MKeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25)}):Play()
+        end
+    end)
     MKeyBtn.MouseButton1Click:Connect(function()
         mListening = true
-        MKeyBtn.Text = "..."
+        MKeyBtn.Text = "Press Any Key to Bind..."
         MkStroke.Color = Color3.fromRGB(255, 255, 255)
     end)
 
@@ -2384,68 +2507,61 @@ local function BuildSaviorInterface()
         if mListening and input.UserInputType == Enum.UserInputType.Keyboard then
             local chosen = (input.KeyCode == Enum.KeyCode.Escape or input.KeyCode == Enum.KeyCode.Backspace) and Enum.KeyCode.RightShift or input.KeyCode
             mListening = false
-            MkStroke.Color = Color3.fromRGB(40, 40, 40)
-            MKeyBtn.Text = chosen.Name
+            MkStroke.Color = Color3.fromRGB(38, 38, 38)
+            MKeyBtn.Text = "Menu Key: [" .. chosen.Name .. "]"
             State.UI.ToggleKey = chosen
             ShowToast("Menu Key set to: " .. chosen.Name)
         end
     end)
 
-    -- 2. Watermark HUD Box
-    local WatermarkBox = CreateFunctionBox(InterfaceCard, "Watermark HUD", "Top-right hub FPS & Ping display", "rbxassetid://6031075929", 2)
-    local WSwitch = Instance.new("TextButton")
-    WSwitch.Size = UDim2.new(0, 42, 0, 22)
-    WSwitch.Position = UDim2.new(1, -52, 0.5, -11)
-    WSwitch.BackgroundColor3 = State.UI.Watermark and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(28, 28, 28)
-    WSwitch.BorderSizePixel = 0
-    WSwitch.Text = ""
-    WSwitch.AutoButtonColor = false
-    WSwitch.Parent = WatermarkBox
+    -- 2. Watermark HUD Square (Toggle in Open Spot)
+    local WatermarkBox = CreateFunctionSquare(InterfaceCard, "Watermark HUD", "Top-right hub FPS & Ping display", "rbxassetid://6031075929", 78, 2)
+    local WToggleBtn = Instance.new("TextButton")
+    WToggleBtn.Size = UDim2.new(1, -24, 0, 26)
+    WToggleBtn.Position = UDim2.new(0, 12, 0, 44)
+    WToggleBtn.BackgroundColor3 = State.UI.Watermark and Color3.fromRGB(30, 30, 30) or Color3.fromRGB(22, 22, 22)
+    WToggleBtn.BorderSizePixel = 0
+    WToggleBtn.Text = State.UI.Watermark and "Status: Visible (Click to Hide)" or "Status: Hidden (Click to Show)"
+    WToggleBtn.Font = Enum.Font.GothamMedium
+    WToggleBtn.TextSize = 11
+    WToggleBtn.TextColor3 = State.UI.Watermark and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 150)
+    WToggleBtn.AutoButtonColor = false
+    WToggleBtn.Parent = WatermarkBox
 
     local WsCorner = Instance.new("UICorner")
-    WsCorner.CornerRadius = UDim.new(1, 0)
-    WsCorner.Parent = WSwitch
+    WsCorner.CornerRadius = UDim.new(0, 6)
+    WsCorner.Parent = WToggleBtn
 
     local WsStroke = Instance.new("UIStroke")
-    WsStroke.Color = Color3.fromRGB(40, 40, 40)
+    WsStroke.Color = State.UI.Watermark and Color3.fromRGB(60, 60, 60) or Color3.fromRGB(34, 34, 34)
     WsStroke.Thickness = 1
-    WsStroke.Parent = WSwitch
+    WsStroke.Parent = WToggleBtn
 
-    local WKnob = Instance.new("Frame")
-    WKnob.Size = UDim2.new(0, 16, 0, 16)
-    WKnob.Position = State.UI.Watermark and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-    WKnob.BackgroundColor3 = State.UI.Watermark and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(140, 140, 140)
-    WKnob.BorderSizePixel = 0
-    WKnob.Parent = WSwitch
-
-    local WkCorner = Instance.new("UICorner")
-    WkCorner.CornerRadius = UDim.new(1, 0)
-    WkCorner.Parent = WKnob
-
-    WSwitch.MouseButton1Click:Connect(function()
+    WToggleBtn.MouseButton1Click:Connect(function()
         State.UI.Watermark = not State.UI.Watermark
         WatermarkBadge.Visible = State.UI.Watermark
         local active = State.UI.Watermark
-        Services.TweenService:Create(WKnob, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            Position = active and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
-            BackgroundColor3 = active and Color3.fromRGB(15, 15, 15) or Color3.fromRGB(140, 140, 140)
+        WToggleBtn.Text = active and "Status: Visible (Click to Hide)" or "Status: Hidden (Click to Show)"
+        WToggleBtn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 150)
+        Services.TweenService:Create(WToggleBtn, TweenInfo.new(0.2), {
+            BackgroundColor3 = active and Color3.fromRGB(30, 30, 30) or Color3.fromRGB(22, 22, 22)
         }):Play()
-        Services.TweenService:Create(WSwitch, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            BackgroundColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(28, 28, 28)
+        Services.TweenService:Create(WsStroke, TweenInfo.new(0.2), {
+            Color = active and Color3.fromRGB(60, 60, 60) or Color3.fromRGB(34, 34, 34)
         }):Play()
     end)
 
-    -- 3. Discord Community Box
-    local DiscordBox = CreateFunctionBox(InterfaceCard, "Discord Community", "Copy server invite (discord.gg/saviorhub)", "rbxassetid://6031075931", 3)
+    -- 3. Discord Community Square (Button in Open Spot)
+    local DiscordBox = CreateFunctionSquare(InterfaceCard, "Discord Community", "discord.gg/saviorhub", "rbxassetid://6031075931", 78, 3)
     local DiscBtn = Instance.new("TextButton")
-    DiscBtn.Size = UDim2.new(0, 68, 0, 26)
-    DiscBtn.Position = UDim2.new(1, -78, 0.5, -13)
-    DiscBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    DiscBtn.Size = UDim2.new(1, -24, 0, 26)
+    DiscBtn.Position = UDim2.new(0, 12, 0, 44)
+    DiscBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     DiscBtn.BorderSizePixel = 0
-    DiscBtn.Text = "Join"
+    DiscBtn.Text = "Join Discord Community"
     DiscBtn.Font = Enum.Font.GothamBold
     DiscBtn.TextSize = 11
-    DiscBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    DiscBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
     DiscBtn.AutoButtonColor = false
     DiscBtn.Parent = DiscordBox
 
@@ -2454,7 +2570,7 @@ local function BuildSaviorInterface()
     DkCorner.Parent = DiscBtn
 
     local DkStroke = Instance.new("UIStroke")
-    DkStroke.Color = Color3.fromRGB(40, 40, 40)
+    DkStroke.Color = Color3.fromRGB(38, 38, 38)
     DkStroke.Thickness = 1
     DkStroke.Parent = DiscBtn
 
@@ -2462,7 +2578,7 @@ local function BuildSaviorInterface()
         Services.TweenService:Create(DiscBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
     end)
     DiscBtn.MouseLeave:Connect(function()
-        Services.TweenService:Create(DiscBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        Services.TweenService:Create(DiscBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25), TextColor3 = Color3.fromRGB(240, 240, 240)}):Play()
     end)
     DiscBtn.MouseButton1Click:Connect(function()
         if SafeSetClipboard(State.Links.Discord) then
@@ -2472,17 +2588,17 @@ local function BuildSaviorInterface()
         end
     end)
 
-    -- 4. TikTok Channel Box
-    local TikTokBox = CreateFunctionBox(InterfaceCard, "TikTok Channel", "Follow @saviorhub for updates & clips", "rbxassetid://6031265976", 4)
+    -- 4. TikTok Channel Square (Button in Open Spot)
+    local TikTokBox = CreateFunctionSquare(InterfaceCard, "TikTok Channel", "@saviorhub official clips", "rbxassetid://6031265976", 78, 4)
     local TkBtn = Instance.new("TextButton")
-    TkBtn.Size = UDim2.new(0, 68, 0, 26)
-    TkBtn.Position = UDim2.new(1, -78, 0.5, -13)
-    TkBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    TkBtn.Size = UDim2.new(1, -24, 0, 26)
+    TkBtn.Position = UDim2.new(0, 12, 0, 44)
+    TkBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     TkBtn.BorderSizePixel = 0
-    TkBtn.Text = "Follow"
+    TkBtn.Text = "Follow on TikTok"
     TkBtn.Font = Enum.Font.GothamBold
     TkBtn.TextSize = 11
-    TkBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TkBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
     TkBtn.AutoButtonColor = false
     TkBtn.Parent = TikTokBox
 
@@ -2491,7 +2607,7 @@ local function BuildSaviorInterface()
     TkkCorner.Parent = TkBtn
 
     local TkkStroke = Instance.new("UIStroke")
-    TkkStroke.Color = Color3.fromRGB(40, 40, 40)
+    TkkStroke.Color = Color3.fromRGB(38, 38, 38)
     TkkStroke.Thickness = 1
     TkkStroke.Parent = TkBtn
 
@@ -2499,7 +2615,7 @@ local function BuildSaviorInterface()
         Services.TweenService:Create(TkBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
     end)
     TkBtn.MouseLeave:Connect(function()
-        Services.TweenService:Create(TkBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        Services.TweenService:Create(TkBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25), TextColor3 = Color3.fromRGB(240, 240, 240)}):Play()
     end)
     TkBtn.MouseButton1Click:Connect(function()
         if SafeSetClipboard(State.Links.TikTok) then
@@ -2511,6 +2627,9 @@ local function BuildSaviorInterface()
 
     local function UnloadSystem()
         pcall(function() Services.RunService:UnbindFromRenderStep("SaviorHubCameraStep") end)
+        for part, _ in pairs(BuildOriginalState) do
+            RestoreMagicBuild(part)
+        end
         for _, conn in ipairs(ActiveConnections) do
             pcall(function() conn:Disconnect() end)
         end
@@ -2524,17 +2643,17 @@ local function BuildSaviorInterface()
         ScreenGui:Destroy()
     end
 
-    -- 5. Copy Loadstring Box
-    local LoadstringBox = CreateFunctionBox(SystemCard, "Copy Loadstring", "Raw script loader line for executors", "rbxassetid://6031094678", 1)
+    -- 5. Copy Loadstring Square (Button in Open Spot)
+    local LoadstringBox = CreateFunctionSquare(SystemCard, "Script Loadstring", "Raw script loader line for executors", "rbxassetid://6031094678", 78, 1)
     local LsBtn = Instance.new("TextButton")
-    LsBtn.Size = UDim2.new(0, 68, 0, 26)
-    LsBtn.Position = UDim2.new(1, -78, 0.5, -13)
-    LsBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    LsBtn.Size = UDim2.new(1, -24, 0, 26)
+    LsBtn.Position = UDim2.new(0, 12, 0, 44)
+    LsBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     LsBtn.BorderSizePixel = 0
-    LsBtn.Text = "Copy"
+    LsBtn.Text = "Copy Script Loadstring"
     LsBtn.Font = Enum.Font.GothamBold
     LsBtn.TextSize = 11
-    LsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    LsBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
     LsBtn.AutoButtonColor = false
     LsBtn.Parent = LoadstringBox
 
@@ -2543,7 +2662,7 @@ local function BuildSaviorInterface()
     LscCorner.Parent = LsBtn
 
     local LscStroke = Instance.new("UIStroke")
-    LscStroke.Color = Color3.fromRGB(40, 40, 40)
+    LscStroke.Color = Color3.fromRGB(38, 38, 38)
     LscStroke.Thickness = 1
     LscStroke.Parent = LsBtn
 
@@ -2551,7 +2670,7 @@ local function BuildSaviorInterface()
         Services.TweenService:Create(LsBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
     end)
     LsBtn.MouseLeave:Connect(function()
-        Services.TweenService:Create(LsBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        Services.TweenService:Create(LsBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25), TextColor3 = Color3.fromRGB(240, 240, 240)}):Play()
     end)
     LsBtn.MouseButton1Click:Connect(function()
         local scriptLine = 'loadstring(game:HttpGet("https://raw.githubusercontent.com/cylixstudios/unviersal/main/universal.lua", true))()'
@@ -2562,17 +2681,17 @@ local function BuildSaviorInterface()
         end
     end)
 
-    -- 6. Rejoin Server Box
-    local RejoinBox = CreateFunctionBox(SystemCard, "Rejoin Server", "Quickly reconnect to this server instance", "rbxassetid://6031097225", 2)
+    -- 6. Rejoin Server Square (Button in Open Spot)
+    local RejoinBox = CreateFunctionSquare(SystemCard, "Rejoin Server", "Reconnect to this exact place instance", "rbxassetid://6031097225", 78, 2)
     local RjBtn = Instance.new("TextButton")
-    RjBtn.Size = UDim2.new(0, 68, 0, 26)
-    RjBtn.Position = UDim2.new(1, -78, 0.5, -13)
-    RjBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    RjBtn.Size = UDim2.new(1, -24, 0, 26)
+    RjBtn.Position = UDim2.new(0, 12, 0, 44)
+    RjBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     RjBtn.BorderSizePixel = 0
-    RjBtn.Text = "Rejoin"
+    RjBtn.Text = "Reconnect to Instance"
     RjBtn.Font = Enum.Font.GothamBold
     RjBtn.TextSize = 11
-    RjBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RjBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
     RjBtn.AutoButtonColor = false
     RjBtn.Parent = RejoinBox
 
@@ -2581,7 +2700,7 @@ local function BuildSaviorInterface()
     RjcCorner.Parent = RjBtn
 
     local RjcStroke = Instance.new("UIStroke")
-    RjcStroke.Color = Color3.fromRGB(40, 40, 40)
+    RjcStroke.Color = Color3.fromRGB(38, 38, 38)
     RjcStroke.Thickness = 1
     RjcStroke.Parent = RjBtn
 
@@ -2589,7 +2708,7 @@ local function BuildSaviorInterface()
         Services.TweenService:Create(RjBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
     end)
     RjBtn.MouseLeave:Connect(function()
-        Services.TweenService:Create(RjBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        Services.TweenService:Create(RjBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25), TextColor3 = Color3.fromRGB(240, 240, 240)}):Play()
     end)
     RjBtn.MouseButton1Click:Connect(function()
         ShowToast("Rejoining server...")
@@ -2601,17 +2720,17 @@ local function BuildSaviorInterface()
         end)
     end)
 
-    -- 7. Server Hop Box
-    local HopBox = CreateFunctionBox(SystemCard, "Server Hop", "Teleport to another active public server", "rbxassetid://6031154871", 3)
+    -- 7. Server Hop Square (Button in Open Spot)
+    local HopBox = CreateFunctionSquare(SystemCard, "Server Hop", "Find and join a different public server", "rbxassetid://6031154871", 78, 3)
     local HopBtn = Instance.new("TextButton")
-    HopBtn.Size = UDim2.new(0, 68, 0, 26)
-    HopBtn.Position = UDim2.new(1, -78, 0.5, -13)
-    HopBtn.BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+    HopBtn.Size = UDim2.new(1, -24, 0, 26)
+    HopBtn.Position = UDim2.new(0, 12, 0, 44)
+    HopBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
     HopBtn.BorderSizePixel = 0
-    HopBtn.Text = "Hop"
+    HopBtn.Text = "Find & Hop Server"
     HopBtn.Font = Enum.Font.GothamBold
     HopBtn.TextSize = 11
-    HopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    HopBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
     HopBtn.AutoButtonColor = false
     HopBtn.Parent = HopBox
 
@@ -2620,7 +2739,7 @@ local function BuildSaviorInterface()
     HpcCorner.Parent = HopBtn
 
     local HpcStroke = Instance.new("UIStroke")
-    HpcStroke.Color = Color3.fromRGB(40, 40, 40)
+    HpcStroke.Color = Color3.fromRGB(38, 38, 38)
     HpcStroke.Thickness = 1
     HpcStroke.Parent = HopBtn
 
@@ -2628,7 +2747,7 @@ local function BuildSaviorInterface()
         Services.TweenService:Create(HopBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 255, 255), TextColor3 = Color3.fromRGB(15, 15, 15)}):Play()
     end)
     HopBtn.MouseLeave:Connect(function()
-        Services.TweenService:Create(HopBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(26, 26, 26), TextColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        Services.TweenService:Create(HopBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(25, 25, 25), TextColor3 = Color3.fromRGB(240, 240, 240)}):Play()
     end)
     HopBtn.MouseButton1Click:Connect(function()
         ShowToast("Searching for servers...")
@@ -2654,9 +2773,9 @@ local function BuildSaviorInterface()
         end)
     end)
 
-    -- 8. Spacious, beautifully formatted Unload Box
+    -- 8. Unload Savior Hub Square (Buttons in Open Spot)
     local UnloadBox = Instance.new("Frame")
-    UnloadBox.Size = UDim2.new(1, 0, 0, 68)
+    UnloadBox.Size = UDim2.new(1, 0, 0, 84)
     UnloadBox.BackgroundColor3 = Color3.fromRGB(18, 14, 14)
     UnloadBox.BorderSizePixel = 0
     UnloadBox.LayoutOrder = 4
@@ -2672,27 +2791,27 @@ local function BuildSaviorInterface()
     UStroke.Parent = UnloadBox
 
     local UIconBadge = Instance.new("Frame")
-    UIconBadge.Size = UDim2.new(0, 32, 0, 32)
-    UIconBadge.Position = UDim2.new(0, 12, 0.5, -16)
+    UIconBadge.Size = UDim2.new(0, 26, 0, 26)
+    UIconBadge.Position = UDim2.new(0, 12, 0, 10)
     UIconBadge.BackgroundColor3 = Color3.fromRGB(32, 16, 16)
     UIconBadge.BorderSizePixel = 0
     UIconBadge.Parent = UnloadBox
 
     local UibCorner = Instance.new("UICorner")
-    UibCorner.CornerRadius = UDim.new(0, 8)
+    UibCorner.CornerRadius = UDim.new(0, 6)
     UibCorner.Parent = UIconBadge
 
     local UIcon = Instance.new("ImageLabel")
-    UIcon.Size = UDim2.new(0, 18, 0, 18)
-    UIcon.Position = UDim2.new(0.5, -9, 0.5, -9)
+    UIcon.Size = UDim2.new(0, 15, 0, 15)
+    UIcon.Position = UDim2.new(0.5, -7, 0.5, -7)
     UIcon.BackgroundTransparency = 1
     UIcon.Image = "rbxassetid://6031094674"
     UIcon.ImageColor3 = Color3.fromRGB(255, 90, 90)
     UIcon.Parent = UIconBadge
 
     local UTitle = Instance.new("TextLabel")
-    UTitle.Size = UDim2.new(1, -210, 0, 18)
-    UTitle.Position = UDim2.new(0, 52, 0, 14)
+    UTitle.Size = UDim2.new(1, -52, 0, 16)
+    UTitle.Position = UDim2.new(0, 44, 0, 8)
     UTitle.BackgroundTransparency = 1
     UTitle.Text = "Unload Savior Hub"
     UTitle.Font = Enum.Font.GothamBold
@@ -2702,24 +2821,24 @@ local function BuildSaviorInterface()
     UTitle.Parent = UnloadBox
 
     local UDesc = Instance.new("TextLabel")
-    UDesc.Size = UDim2.new(1, -210, 0, 16)
-    UDesc.Position = UDim2.new(0, 52, 0, 32)
+    UDesc.Size = UDim2.new(1, -52, 0, 14)
+    UDesc.Position = UDim2.new(0, 44, 0, 24)
     UDesc.BackgroundTransparency = 1
     UDesc.Text = "Detach all camera hooks, overlays & GUI"
     UDesc.Font = Enum.Font.Gotham
     UDesc.TextSize = 10
-    UDesc.TextColor3 = Color3.fromRGB(150, 110, 110)
+    UDesc.TextColor3 = Color3.fromRGB(160, 110, 110)
     UDesc.TextXAlignment = Enum.TextXAlignment.Left
     UDesc.Parent = UnloadBox
 
     local UnloadBtnContainer = Instance.new("Frame")
-    UnloadBtnContainer.Size = UDim2.new(0, 144, 0, 26)
-    UnloadBtnContainer.Position = UDim2.new(1, -152, 0.5, -13)
+    UnloadBtnContainer.Size = UDim2.new(1, -24, 0, 28)
+    UnloadBtnContainer.Position = UDim2.new(0, 12, 0, 46)
     UnloadBtnContainer.BackgroundTransparency = 1
     UnloadBtnContainer.Parent = UnloadBox
 
     local UnloadKeyBtn = Instance.new("TextButton")
-    UnloadKeyBtn.Size = UDim2.new(0, 66, 1, 0)
+    UnloadKeyBtn.Size = UDim2.new(0.48, -4, 1, 0)
     UnloadKeyBtn.Position = UDim2.new(0, 0, 0, 0)
     UnloadKeyBtn.BackgroundColor3 = Color3.fromRGB(24, 20, 20)
     UnloadKeyBtn.BorderSizePixel = 0
@@ -2758,11 +2877,11 @@ local function BuildSaviorInterface()
     end)
 
     local UnloadExecBtn = Instance.new("TextButton")
-    UnloadExecBtn.Size = UDim2.new(0, 72, 1, 0)
-    UnloadExecBtn.Position = UDim2.new(1, -72, 0, 0)
-    UnloadExecBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+    UnloadExecBtn.Size = UDim2.new(0.52, -4, 1, 0)
+    UnloadExecBtn.Position = UDim2.new(0.48, 4, 0, 0)
+    UnloadExecBtn.BackgroundColor3 = Color3.fromRGB(215, 45, 45)
     UnloadExecBtn.BorderSizePixel = 0
-    UnloadExecBtn.Text = "Unload"
+    UnloadExecBtn.Text = "Unload Hub"
     UnloadExecBtn.Font = Enum.Font.GothamBold
     UnloadExecBtn.TextSize = 11
     UnloadExecBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -2800,17 +2919,26 @@ local InputBeganConn = Services.UserInputService.InputBegan:Connect(function(inp
         end
     end
 
-    -- Targeting Activation (Supports Keyboard and Mouse inputs)
+    -- Targeting Activation (Supports Keyboard and Mouse inputs, Hold or Toggle)
     if IsKeyMatch(State.Aimbot.Keybind, input) then
-        State.Aimbot.Active = true
+        if State.Aimbot.AimMode == "Toggle" then
+            State.Aimbot.Active = not State.Aimbot.Active
+            if not State.Aimbot.Active then
+                LockedTarget = nil
+            end
+        else
+            State.Aimbot.Active = true
+        end
     end
 end)
 table.insert(ActiveConnections, InputBeganConn)
 
 local InputEndedConn = Services.UserInputService.InputEnded:Connect(function(input)
     if IsKeyMatch(State.Aimbot.Keybind, input) then
-        State.Aimbot.Active = false
-        LockedTarget = nil
+        if State.Aimbot.AimMode == "Hold" then
+            State.Aimbot.Active = false
+            LockedTarget = nil
+        end
     end
 end)
 table.insert(ActiveConnections, InputEndedConn)
@@ -2837,9 +2965,10 @@ table.insert(ActiveConnections, PlayerRemovingConn)
 -- Bind Camera Step after Roblox CameraModule (priority 201) to eliminate jump jitter and camera fighting
 Services.RunService:BindToRenderStep("SaviorHubCameraStep", Enum.RenderPriority.Camera.Value + 1, StepTargeting)
 
--- Visuals Pipeline on RenderStepped
+-- Visuals & Magic Engine Pipeline on RenderStepped
 local RenderConn = Services.RunService.RenderStepped:Connect(function()
     StepVisuals()
+    StepMagicEngine()
 end)
 table.insert(ActiveConnections, RenderConn)
 
