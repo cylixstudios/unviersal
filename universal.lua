@@ -1,7 +1,7 @@
 --[[
     Savior Hub - Universal Framework
     Comprehensive Client Instrumentation & Visual Projection System
-    Matte Black & Pure White Edition
+    Matte Black & Pure White Edition + Dynamic Live Preview Simulator
 ]]
 
 local Services = {
@@ -465,7 +465,7 @@ local function StepVisuals()
 end
 
 -- ==============================================================================
--- GUI CONSTRUCTION: Savior Hub (Matte Black & Pure White Theme)
+-- GUI CONSTRUCTION: Savior Hub (Curved Neat Edges + Interactive Live Preview)
 -- ==============================================================================
 
 local function BuildSaviorInterface()
@@ -479,23 +479,23 @@ local function BuildSaviorInterface()
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-    -- Main Container Window (Matte Black)
+    -- Main Container Window (Matte Black, Smooth Curved Edges)
     local MainFrame = Instance.new("Frame")
     MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 700, 0, 490)
-    MainFrame.Position = UDim2.new(0.5, -350, 0.5, -245)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10) -- Matte Black
+    MainFrame.Size = UDim2.new(0, 710, 0, 500)
+    MainFrame.Position = UDim2.new(0.5, -355, 0.5, -250)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
     MainFrame.BorderSizePixel = 0
     MainFrame.ClipsDescendants = true
     MainFrame.Parent = ScreenGui
 
     local MainCorner = Instance.new("UICorner")
-    MainCorner.CornerRadius = UDim.new(0, 10)
+    MainCorner.CornerRadius = UDim.new(0, 16)
     MainCorner.Parent = MainFrame
 
     local MainStroke = Instance.new("UIStroke")
-    MainStroke.Color = Color3.fromRGB(30, 30, 30)
-    MainStroke.Thickness = 1
+    MainStroke.Color = Color3.fromRGB(28, 28, 28)
+    MainStroke.Thickness = 1.2
     MainStroke.Parent = MainFrame
 
     -- Dragging Logic
@@ -537,36 +537,40 @@ local function BuildSaviorInterface()
     -- Left Navigation Sidebar
     local Sidebar = Instance.new("Frame")
     Sidebar.Name = "Sidebar"
-    Sidebar.Size = UDim2.new(0, 170, 1, 0)
+    Sidebar.Size = UDim2.new(0, 175, 1, 0)
     Sidebar.Position = UDim2.new(0, 0, 0, 0)
     Sidebar.BackgroundColor3 = Color3.fromRGB(7, 7, 7)
     Sidebar.BorderSizePixel = 0
     Sidebar.Parent = MainFrame
 
+    local SidebarCorner = Instance.new("UICorner")
+    SidebarCorner.CornerRadius = UDim.new(0, 16)
+    SidebarCorner.Parent = Sidebar
+
     local SidebarBorder = Instance.new("Frame")
     SidebarBorder.Size = UDim2.new(0, 1, 1, 0)
     SidebarBorder.Position = UDim2.new(1, -1, 0, 0)
-    SidebarBorder.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+    SidebarBorder.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
     SidebarBorder.BorderSizePixel = 0
     SidebarBorder.Parent = Sidebar
 
     -- Logo / Brand Header ("Savior Hub")
     local BrandContainer = Instance.new("Frame")
-    BrandContainer.Size = UDim2.new(1, 0, 0, 56)
+    BrandContainer.Size = UDim2.new(1, 0, 0, 58)
     BrandContainer.BackgroundTransparency = 1
     BrandContainer.Parent = Sidebar
 
     local BrandIcon = Instance.new("ImageLabel")
-    BrandIcon.Size = UDim2.new(0, 18, 0, 18)
-    BrandIcon.Position = UDim2.new(0, 16, 0.5, -9)
+    BrandIcon.Size = UDim2.new(0, 20, 0, 20)
+    BrandIcon.Position = UDim2.new(0, 18, 0.5, -10)
     BrandIcon.BackgroundTransparency = 1
     BrandIcon.Image = "rbxassetid://6031075931"
     BrandIcon.ImageColor3 = Color3.fromRGB(255, 255, 255)
     BrandIcon.Parent = BrandContainer
 
     local BrandTitle = Instance.new("TextLabel")
-    BrandTitle.Size = UDim2.new(1, -44, 1, 0)
-    BrandTitle.Position = UDim2.new(0, 42, 0, 0)
+    BrandTitle.Size = UDim2.new(1, -48, 1, 0)
+    BrandTitle.Position = UDim2.new(0, 46, 0, 0)
     BrandTitle.BackgroundTransparency = 1
     BrandTitle.Text = "Savior Hub"
     BrandTitle.Font = Enum.Font.GothamBold
@@ -577,25 +581,30 @@ local function BuildSaviorInterface()
 
     -- Sidebar Tab Navigation Button
     local TabButton = Instance.new("Frame")
-    TabButton.Size = UDim2.new(1, -20, 0, 40)
-    TabButton.Position = UDim2.new(0, 10, 0, 68)
-    TabButton.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+    TabButton.Size = UDim2.new(1, -22, 0, 42)
+    TabButton.Position = UDim2.new(0, 11, 0, 70)
+    TabButton.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
     TabButton.BorderSizePixel = 0
     TabButton.Parent = Sidebar
 
     local TabCorner = Instance.new("UICorner")
-    TabCorner.CornerRadius = UDim.new(0, 6)
+    TabCorner.CornerRadius = UDim.new(0, 10)
     TabCorner.Parent = TabButton
+
+    local TabStroke = Instance.new("UIStroke")
+    TabStroke.Color = Color3.fromRGB(30, 30, 30)
+    TabStroke.Thickness = 1
+    TabStroke.Parent = TabButton
 
     local ActiveIndicator = Instance.new("Frame")
     ActiveIndicator.Size = UDim2.new(0, 3, 0, 20)
-    ActiveIndicator.Position = UDim2.new(0, 0, 0.5, -10)
+    ActiveIndicator.Position = UDim2.new(0, 2, 0.5, -10)
     ActiveIndicator.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     ActiveIndicator.BorderSizePixel = 0
     ActiveIndicator.Parent = TabButton
 
     local IndCorner = Instance.new("UICorner")
-    IndCorner.CornerRadius = UDim.new(0, 2)
+    IndCorner.CornerRadius = UDim.new(1, 0)
     IndCorner.Parent = ActiveIndicator
 
     local TabIcon = Instance.new("ImageLabel")
@@ -617,30 +626,30 @@ local function BuildSaviorInterface()
     TabText.TextXAlignment = Enum.TextXAlignment.Left
     TabText.Parent = TabButton
 
-    -- Bottom Left Profile & Key Badge Box
+    -- Bottom Left Profile & Key Badge Box (Curved circular neat container)
     local ProfileBox = Instance.new("Frame")
     ProfileBox.Name = "ProfileBox"
-    ProfileBox.Size = UDim2.new(1, -20, 0, 54)
-    ProfileBox.Position = UDim2.new(0, 10, 1, -66)
-    ProfileBox.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    ProfileBox.Size = UDim2.new(1, -22, 0, 56)
+    ProfileBox.Position = UDim2.new(0, 11, 1, -68)
+    ProfileBox.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
     ProfileBox.BorderSizePixel = 0
     ProfileBox.Parent = Sidebar
 
     local ProfileCorner = Instance.new("UICorner")
-    ProfileCorner.CornerRadius = UDim.new(0, 8)
+    ProfileCorner.CornerRadius = UDim.new(0, 12)
     ProfileCorner.Parent = ProfileBox
 
     local ProfileStroke = Instance.new("UIStroke")
-    ProfileStroke.Color = Color3.fromRGB(28, 28, 28)
+    ProfileStroke.Color = Color3.fromRGB(26, 26, 26)
     ProfileStroke.Thickness = 1
     ProfileStroke.Parent = ProfileBox
 
     -- Avatar circular image
     local AvatarImage = Instance.new("ImageLabel")
     AvatarImage.Name = "AvatarImage"
-    AvatarImage.Size = UDim2.new(0, 36, 0, 36)
-    AvatarImage.Position = UDim2.new(0, 9, 0.5, -18)
-    AvatarImage.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+    AvatarImage.Size = UDim2.new(0, 38, 0, 38)
+    AvatarImage.Position = UDim2.new(0, 9, 0.5, -19)
+    AvatarImage.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
     AvatarImage.BorderSizePixel = 0
     AvatarImage.Image = "rbxasset://textures/ui/GuiImagePlaceholder.png"
     AvatarImage.Parent = ProfileBox
@@ -648,6 +657,11 @@ local function BuildSaviorInterface()
     local AvatarCorner = Instance.new("UICorner")
     AvatarCorner.CornerRadius = UDim.new(1, 0)
     AvatarCorner.Parent = AvatarImage
+
+    local AvatarStroke = Instance.new("UIStroke")
+    AvatarStroke.Color = Color3.fromRGB(36, 36, 36)
+    AvatarStroke.Thickness = 1
+    AvatarStroke.Parent = AvatarImage
 
     task.spawn(function()
         local thumb, isReady = Services.Players:GetUserThumbnailAsync(
@@ -661,8 +675,8 @@ local function BuildSaviorInterface()
     end)
 
     local PlayerNameLabel = Instance.new("TextLabel")
-    PlayerNameLabel.Size = UDim2.new(1, -54, 0, 18)
-    PlayerNameLabel.Position = UDim2.new(0, 52, 0, 9)
+    PlayerNameLabel.Size = UDim2.new(1, -56, 0, 18)
+    PlayerNameLabel.Position = UDim2.new(0, 54, 0, 10)
     PlayerNameLabel.BackgroundTransparency = 1
     PlayerNameLabel.Text = LocalPlayer.DisplayName or LocalPlayer.Name
     PlayerNameLabel.Font = Enum.Font.GothamBold
@@ -673,8 +687,8 @@ local function BuildSaviorInterface()
     PlayerNameLabel.Parent = ProfileBox
 
     local KeyBadgeLabel = Instance.new("TextLabel")
-    KeyBadgeLabel.Size = UDim2.new(1, -54, 0, 16)
-    KeyBadgeLabel.Position = UDim2.new(0, 52, 0, 27)
+    KeyBadgeLabel.Size = UDim2.new(1, -56, 0, 16)
+    KeyBadgeLabel.Position = UDim2.new(0, 54, 0, 28)
     KeyBadgeLabel.BackgroundTransparency = 1
     KeyBadgeLabel.Text = "key : Free"
     KeyBadgeLabel.Font = Enum.Font.GothamMedium
@@ -685,8 +699,8 @@ local function BuildSaviorInterface()
 
     -- Right Content Area (Two Columns)
     local ContentArea = Instance.new("Frame")
-    ContentArea.Size = UDim2.new(1, -170, 1, 0)
-    ContentArea.Position = UDim2.new(0, 170, 0, 0)
+    ContentArea.Size = UDim2.new(1, -175, 1, 0)
+    ContentArea.Position = UDim2.new(0, 175, 0, 0)
     ContentArea.BackgroundTransparency = 1
     ContentArea.Parent = MainFrame
 
@@ -703,22 +717,22 @@ local function BuildSaviorInterface()
     CardsPadding.PaddingBottom = UDim.new(0, 14)
     CardsPadding.Parent = ContentArea
 
-    -- Helper Component: Card Generator (Matte Black with Crisp White Text)
+    -- Helper Component: Card Generator (Curved & Neat)
     local function CreateCard(title, subtitle, layoutOrder)
         local Card = Instance.new("Frame")
         Card.Name = title .. "Card"
         Card.Size = UDim2.new(0.5, -7, 1, 0)
-        Card.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+        Card.BackgroundColor3 = Color3.fromRGB(13, 13, 13)
         Card.BorderSizePixel = 0
         Card.LayoutOrder = layoutOrder
         Card.Parent = ContentArea
 
         local CardCorner = Instance.new("UICorner")
-        CardCorner.CornerRadius = UDim.new(0, 8)
+        CardCorner.CornerRadius = UDim.new(0, 14)
         CardCorner.Parent = Card
 
         local CardStroke = Instance.new("UIStroke")
-        CardStroke.Color = Color3.fromRGB(26, 26, 26)
+        CardStroke.Color = Color3.fromRGB(24, 24, 24)
         CardStroke.Thickness = 1
         CardStroke.Parent = Card
 
@@ -752,7 +766,7 @@ local function BuildSaviorInterface()
         local HeaderDivider = Instance.new("Frame")
         HeaderDivider.Size = UDim2.new(1, -28, 0, 1)
         HeaderDivider.Position = UDim2.new(0, 14, 0, 48)
-        HeaderDivider.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+        HeaderDivider.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
         HeaderDivider.BorderSizePixel = 0
         HeaderDivider.Parent = Card
 
@@ -762,7 +776,7 @@ local function BuildSaviorInterface()
         Scroll.BackgroundTransparency = 1
         Scroll.BorderSizePixel = 0
         Scroll.ScrollBarThickness = 3
-        Scroll.ScrollBarImageColor3 = Color3.fromRGB(40, 40, 40)
+        Scroll.ScrollBarImageColor3 = Color3.fromRGB(36, 36, 36)
         Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
         Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
         Scroll.Parent = Card
@@ -801,11 +815,11 @@ local function BuildSaviorInterface()
         KeyBtn.Parent = Row
 
         local KeyCorner = Instance.new("UICorner")
-        KeyCorner.CornerRadius = UDim.new(0, 5)
+        KeyCorner.CornerRadius = UDim.new(0, 8)
         KeyCorner.Parent = KeyBtn
 
         local KeyStroke = Instance.new("UIStroke")
-        KeyStroke.Color = Color3.fromRGB(34, 34, 34)
+        KeyStroke.Color = Color3.fromRGB(32, 32, 32)
         KeyStroke.Thickness = 1
         KeyStroke.Parent = KeyBtn
 
@@ -827,7 +841,6 @@ local function BuildSaviorInterface()
         KeyText.TextColor3 = Color3.fromRGB(240, 240, 240)
         KeyText.Parent = KeyBtn
 
-        -- Smooth hover animation
         KeyBtn.MouseEnter:Connect(function()
             Services.TweenService:Create(KeyBtn, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(28, 28, 28)}):Play()
         end)
@@ -855,11 +868,11 @@ local function BuildSaviorInterface()
             end
         end)
 
-        -- Master Switch (White Accent)
+        -- Master Switch (Curved pill shape)
         local Switch = Instance.new("TextButton")
         Switch.Size = UDim2.new(0, 36, 0, 20)
         Switch.Position = UDim2.new(1, -36, 0.5, -10)
-        Switch.BackgroundColor3 = defaultActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(26, 26, 26)
+        Switch.BackgroundColor3 = defaultActive and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(24, 24, 24)
         Switch.BorderSizePixel = 0
         Switch.Text = ""
         Switch.AutoButtonColor = false
@@ -870,7 +883,7 @@ local function BuildSaviorInterface()
         SwitchCorner.Parent = Switch
 
         local SwitchStroke = Instance.new("UIStroke")
-        SwitchStroke.Color = Color3.fromRGB(38, 38, 38)
+        SwitchStroke.Color = Color3.fromRGB(36, 36, 36)
         SwitchStroke.Thickness = 1
         SwitchStroke.Parent = Switch
 
@@ -889,7 +902,7 @@ local function BuildSaviorInterface()
         Switch.MouseButton1Click:Connect(function()
             active = not active
             local targetPos = active and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-            local targetColor = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(26, 26, 26)
+            local targetColor = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(24, 24, 24)
             local knobColor = active and Color3.fromRGB(10, 10, 10) or Color3.fromRGB(200, 200, 200)
 
             Services.TweenService:Create(Knob, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
@@ -936,11 +949,11 @@ local function BuildSaviorInterface()
             SubBtn.Parent = Row
 
             local SubCorner = Instance.new("UICorner")
-            SubCorner.CornerRadius = UDim.new(0, 4)
+            SubCorner.CornerRadius = UDim.new(0, 6)
             SubCorner.Parent = SubBtn
 
             local SubStroke = Instance.new("UIStroke")
-            SubStroke.Color = Color3.fromRGB(34, 34, 34)
+            SubStroke.Color = Color3.fromRGB(32, 32, 32)
             SubStroke.Thickness = 1
             SubStroke.Parent = SubBtn
 
@@ -956,7 +969,7 @@ local function BuildSaviorInterface()
             end)
         end
 
-        -- Switch toggle (White Accent)
+        -- Switch toggle (Curved pill shape)
         local Switch = Instance.new("TextButton")
         Switch.Size = UDim2.new(0, 32, 0, 18)
         Switch.Position = UDim2.new(1, -32, 0.5, -9)
@@ -1004,7 +1017,7 @@ local function BuildSaviorInterface()
         end)
     end
 
-    -- Helper Component: Slider Row with Global Dragging (Fixed so it NEVER gets stuck)
+    -- Helper Component: Slider Row with Global Dragging (Fixed non-stick)
     local function CreateSliderRow(parent, name, minVal, maxVal, defaultVal, onValueChanged)
         local Container = Instance.new("Frame")
         Container.Size = UDim2.new(1, 0, 0, 42)
@@ -1116,6 +1129,268 @@ local function BuildSaviorInterface()
         end)
     end
 
+    -- ==============================================================================
+    -- LIVE VISUALS PREVIEW WINDOW (3D Player Model Simulator)
+    -- ==============================================================================
+
+    local PreviewFrame = Instance.new("Frame")
+    PreviewFrame.Name = "PreviewFrame"
+    PreviewFrame.Size = UDim2.new(0, 240, 0, 500)
+    PreviewFrame.Position = UDim2.new(0.5, 365, 0.5, -250)
+    PreviewFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    PreviewFrame.BorderSizePixel = 0
+    PreviewFrame.ClipsDescendants = true
+    PreviewFrame.Visible = State.ESP.Enabled
+    PreviewFrame.Parent = ScreenGui
+
+    local PreviewCorner = Instance.new("UICorner")
+    PreviewCorner.CornerRadius = UDim.new(0, 16)
+    PreviewCorner.Parent = PreviewFrame
+
+    local PreviewStroke = Instance.new("UIStroke")
+    PreviewStroke.Color = Color3.fromRGB(28, 28, 28)
+    PreviewStroke.Thickness = 1.2
+    PreviewStroke.Parent = PreviewFrame
+
+    -- Preview Header
+    local PrevHeader = Instance.new("Frame")
+    PrevHeader.Size = UDim2.new(1, 0, 0, 48)
+    PrevHeader.BackgroundTransparency = 1
+    PrevHeader.Parent = PreviewFrame
+
+    local PrevTitle = Instance.new("TextLabel")
+    PrevTitle.Size = UDim2.new(1, -24, 0, 20)
+    PrevTitle.Position = UDim2.new(0, 14, 0, 10)
+    PrevTitle.BackgroundTransparency = 1
+    PrevTitle.Text = "Visuals Preview"
+    PrevTitle.Font = Enum.Font.GothamBold
+    PrevTitle.TextSize = 14
+    PrevTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PrevTitle.TextXAlignment = Enum.TextXAlignment.Left
+    PrevTitle.Parent = PrevHeader
+
+    local PrevSubtitle = Instance.new("TextLabel")
+    PrevSubtitle.Size = UDim2.new(1, -24, 0, 14)
+    PrevSubtitle.Position = UDim2.new(0, 14, 0, 28)
+    PrevSubtitle.BackgroundTransparency = 1
+    PrevSubtitle.Text = "Real-time preview simulator"
+    PrevSubtitle.Font = Enum.Font.Gotham
+    PrevSubtitle.TextSize = 11
+    PrevSubtitle.TextColor3 = Color3.fromRGB(140, 140, 140)
+    PrevSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+    PrevSubtitle.Parent = PrevHeader
+
+    local PrevDivider = Instance.new("Frame")
+    PrevDivider.Size = UDim2.new(1, -28, 0, 1)
+    PrevDivider.Position = UDim2.new(0, 14, 0, 48)
+    PrevDivider.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+    PrevDivider.BorderSizePixel = 0
+    PrevDivider.Parent = PreviewFrame
+
+    -- 3D Viewport
+    local Viewport = Instance.new("ViewportFrame")
+    Viewport.Size = UDim2.new(1, -28, 1, -66)
+    Viewport.Position = UDim2.new(0, 14, 0, 54)
+    Viewport.BackgroundColor3 = Color3.fromRGB(14, 14, 14)
+    Viewport.BorderSizePixel = 0
+    Viewport.Parent = PreviewFrame
+
+    local VpCorner = Instance.new("UICorner")
+    VpCorner.CornerRadius = UDim.new(0, 12)
+    VpCorner.Parent = Viewport
+
+    local VpStroke = Instance.new("UIStroke")
+    VpStroke.Color = Color3.fromRGB(24, 24, 24)
+    VpStroke.Thickness = 1
+    VpStroke.Parent = Viewport
+
+    local VpCamera = Instance.new("Camera")
+    VpCamera.FieldOfView = 42
+    VpCamera.CFrame = CFrame.new(Vector3.new(0, 0.4, 7.5), Vector3.new(0, 0.2, 0))
+    Viewport.CurrentCamera = VpCamera
+    VpCamera.Parent = Viewport
+
+    -- Construct 3D Dummy Model for Viewport
+    local Dummy = Instance.new("Model")
+    Dummy.Name = "PreviewDummy"
+
+    local function MakePart(name, size, cframe)
+        local p = Instance.new("Part")
+        p.Name = name
+        p.Size = size
+        p.CFrame = cframe
+        p.Color = Color3.fromRGB(180, 180, 180)
+        p.Material = Enum.Material.SmoothPlastic
+        p.Anchored = true
+        p.CanCollide = false
+        p.Parent = Dummy
+        return p
+    end
+
+    local dHead = MakePart("Head", Vector3.new(1.2, 1.2, 1.2), CFrame.new(0, 1.9, 0))
+    local dTorso = MakePart("Torso", Vector3.new(2, 2, 1), CFrame.new(0, 0.3, 0))
+    local dLeftArm = MakePart("Left Arm", Vector3.new(1, 2, 1), CFrame.new(-1.6, 0.3, 0))
+    local dRightArm = MakePart("Right Arm", Vector3.new(1, 2, 1), CFrame.new(1.6, 0.3, 0))
+    local dLeftLeg = MakePart("Left Leg", Vector3.new(1, 2, 1), CFrame.new(-0.55, -1.7, 0))
+    local dRightLeg = MakePart("Right Leg", Vector3.new(1, 2, 1), CFrame.new(0.55, -1.7, 0))
+
+    Dummy.PrimaryPart = dTorso
+    Dummy.Parent = Viewport
+
+    -- Live 2D Simulator Overlays on the Viewport
+    local PrevBox = Instance.new("Frame")
+    PrevBox.Size = UDim2.new(0, 130, 0, 220)
+    PrevBox.Position = UDim2.new(0.5, -65, 0.5, -110)
+    PrevBox.BackgroundTransparency = 1
+    PrevBox.Visible = State.ESP.Box
+    PrevBox.Parent = Viewport
+
+    local PrevBoxStroke = Instance.new("UIStroke")
+    PrevBoxStroke.Color = Color3.fromRGB(255, 255, 255)
+    PrevBoxStroke.Thickness = 1.2
+    PrevBoxStroke.Parent = PrevBox
+
+    -- Name Overlay
+    local PrevName = Instance.new("TextLabel")
+    PrevName.Size = UDim2.new(1, 0, 0, 16)
+    PrevName.Position = UDim2.new(0, 0, 0, -20)
+    PrevName.BackgroundTransparency = 1
+    PrevName.Text = "Target Dummy"
+    PrevName.Font = Enum.Font.GothamBold
+    PrevName.TextSize = 12
+    PrevName.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PrevName.Visible = State.ESP.Name
+    PrevName.Parent = PrevBox
+
+    -- Distance Overlay
+    local PrevDist = Instance.new("TextLabel")
+    PrevDist.Size = UDim2.new(1, 0, 0, 16)
+    PrevDist.Position = UDim2.new(0, 0, 1, 4)
+    PrevDist.BackgroundTransparency = 1
+    PrevDist.Text = "45 studs"
+    PrevDist.Font = Enum.Font.GothamMedium
+    PrevDist.TextSize = 11
+    PrevDist.TextColor3 = Color3.fromRGB(200, 200, 200)
+    PrevDist.Visible = State.ESP.Distance
+    PrevDist.Parent = PrevBox
+
+    -- Health Bar Overlay
+    local PrevHealthBar = Instance.new("Frame")
+    PrevHealthBar.Size = UDim2.new(0, 3, 1, 0)
+    PrevHealthBar.Position = UDim2.new(0, -7, 0, 0)
+    PrevHealthBar.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    PrevHealthBar.BorderSizePixel = 0
+    PrevHealthBar.Visible = State.ESP.HealthBar
+    PrevHealthBar.Parent = PrevBox
+
+    local PrevHealthCorner = Instance.new("UICorner")
+    PrevHealthCorner.CornerRadius = UDim.new(1, 0)
+    PrevHealthCorner.Parent = PrevHealthBar
+
+    -- Health Text Overlay
+    local PrevHealthText = Instance.new("TextLabel")
+    PrevHealthText.Size = UDim2.new(0, 44, 0, 16)
+    PrevHealthText.Position = UDim2.new(0, -54, 0, 0)
+    PrevHealthText.BackgroundTransparency = 1
+    PrevHealthText.Text = "100 HP"
+    PrevHealthText.Font = Enum.Font.GothamMedium
+    PrevHealthText.TextSize = 11
+    PrevHealthText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PrevHealthText.TextXAlignment = Enum.TextXAlignment.Right
+    PrevHealthText.Visible = State.ESP.HealthText
+    PrevHealthText.Parent = PrevBox
+
+    -- Skeleton Lines (Simulated in GUI)
+    local PrevSkelContainer = Instance.new("Frame")
+    PrevSkelContainer.Size = UDim2.new(1, 0, 1, 0)
+    PrevSkelContainer.BackgroundTransparency = 1
+    PrevSkelContainer.Visible = State.ESP.Skeleton
+    PrevSkelContainer.Parent = PrevBox
+
+    local function MakeSkelLine(x1, y1, x2, y2)
+        local line = Instance.new("Frame")
+        line.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        line.BorderSizePixel = 0
+        local length = math.sqrt((x2 - x1)^2 + (y2 - y1)^2)
+        line.Size = UDim2.new(0, length, 0, 1.5)
+        line.Position = UDim2.new(0, (x1 + x2) / 2 - length / 2, 0, (y1 + y2) / 2)
+        line.Rotation = math.deg(math.atan2(y2 - y1, x2 - x1))
+        line.Parent = PrevSkelContainer
+        return line
+    end
+
+    MakeSkelLine(65, 30, 65, 110)   -- Head to torso
+    MakeSkelLine(65, 55, 20, 95)    -- Torso to left arm
+    MakeSkelLine(65, 55, 110, 95)   -- Torso to right arm
+    MakeSkelLine(65, 110, 40, 195)  -- Torso to left leg
+    MakeSkelLine(65, 110, 90, 195)  -- Torso to right leg
+
+    -- Tracer Overlay
+    local PrevTracer = Instance.new("Frame")
+    PrevTracer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    PrevTracer.BorderSizePixel = 0
+    PrevTracer.Visible = State.ESP.Tracer
+    PrevTracer.Parent = Viewport
+
+    local function UpdatePreviewTracer()
+        local vpW = Viewport.AbsoluteSize.X
+        local vpH = Viewport.AbsoluteSize.Y
+        if vpW <= 0 or vpH <= 0 then return end
+        local x1 = vpW / 2
+        local y1 = vpH
+        local x2 = vpW / 2
+        local y2 = (vpH / 2) + 110
+        local length = math.sqrt((x2 - x1)^2 + (y2 - y1)^2)
+        PrevTracer.Size = UDim2.new(0, length, 0, 1.2)
+        PrevTracer.Position = UDim2.new(0, (x1 + x2)/2 - length/2, 0, (y1 + y2)/2)
+        PrevTracer.Rotation = math.deg(math.atan2(y2 - y1, x2 - x1))
+    end
+
+    local function RefreshPreview()
+        PrevBox.Visible = State.ESP.Box
+        PrevName.Visible = State.ESP.Name
+        PrevDist.Visible = State.ESP.Distance
+        PrevHealthBar.Visible = State.ESP.HealthBar
+        PrevHealthText.Visible = State.ESP.HealthText
+        PrevSkelContainer.Visible = State.ESP.Skeleton
+        PrevTracer.Visible = State.ESP.Tracer
+        UpdatePreviewTracer()
+
+        -- Chams tint
+        local dummyColor = State.ESP.Chams and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 180)
+        local dummyMaterial = State.ESP.Chams and Enum.Material.Neon or Enum.Material.SmoothPlastic
+        for _, part in ipairs(Dummy:GetChildren()) do
+            if part:IsA("BasePart") then
+                part.Color = dummyColor
+                part.Material = dummyMaterial
+            end
+        end
+    end
+
+    local function TogglePreview(visible)
+        if visible then
+            PreviewFrame.Visible = true
+            RefreshPreview()
+            Services.TweenService:Create(PreviewFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                Position = UDim2.new(MainFrame.Position.X.Scale, MainFrame.Position.X.Offset + 720, MainFrame.Position.Y.Scale, MainFrame.Position.Y.Offset)
+            }):Play()
+        else
+            PreviewFrame.Visible = false
+        end
+    end
+
+    -- Keep Preview attached when dragging MainFrame
+    Services.RunService.RenderStepped:Connect(function()
+        if PreviewFrame.Visible then
+            PreviewFrame.Position = UDim2.new(
+                MainFrame.Position.X.Scale,
+                MainFrame.Position.X.Offset + 720,
+                MainFrame.Position.Y.Scale,
+                MainFrame.Position.Y.Offset
+            )
+        end
+    end)
+
     -- Populate Column 1: Aimbot Controls
     local AimCard = CreateCard("Aimbot Controls", "Configure aim bot settings", 1)
     CreateMasterRow(AimCard, State.Aimbot.Keybind, function(newKey)
@@ -1150,42 +1425,52 @@ local function BuildSaviorInterface()
         State.ESP.Keybind = newKey
     end, State.ESP.Enabled, function(val)
         State.ESP.Enabled = val
+        TogglePreview(val)
     end)
 
     CreateToggleRow(ESPCard, "Box ESP", true, State.ESP.Box, function(val)
         State.ESP.Box = val
+        RefreshPreview()
     end)
 
     CreateToggleRow(ESPCard, "Name ESP", true, State.ESP.Name, function(val)
         State.ESP.Name = val
+        RefreshPreview()
     end)
 
     CreateToggleRow(ESPCard, "Distance ESP", true, State.ESP.Distance, function(val)
         State.ESP.Distance = val
+        RefreshPreview()
     end)
 
     CreateToggleRow(ESPCard, "Skeleton ESP", true, State.ESP.Skeleton, function(val)
         State.ESP.Skeleton = val
+        RefreshPreview()
     end)
 
     CreateToggleRow(ESPCard, "Health Text ESP", true, State.ESP.HealthText, function(val)
         State.ESP.HealthText = val
+        RefreshPreview()
     end)
 
     CreateToggleRow(ESPCard, "Health Bar ESP", true, State.ESP.HealthBar, function(val)
         State.ESP.HealthBar = val
+        RefreshPreview()
     end)
 
     CreateToggleRow(ESPCard, "Tracer ESP", true, State.ESP.Tracer, function(val)
         State.ESP.Tracer = val
+        RefreshPreview()
     end)
 
     CreateToggleRow(ESPCard, "Chams", true, State.ESP.Chams, function(val)
         State.ESP.Chams = val
+        RefreshPreview()
     end)
 
     CreateToggleRow(ESPCard, "Team Check", true, State.ESP.TeamCheck, function(val)
         State.ESP.TeamCheck = val
+        RefreshPreview()
     end)
 
     CreateSliderRow(ESPCard, "ESP Distance", 100, 5000, State.ESP.MaxDistance, function(val)
@@ -1193,20 +1478,23 @@ local function BuildSaviorInterface()
     end)
 
     ScreenGui.Parent = guiParent
-    return ScreenGui, MainFrame
+    return ScreenGui, MainFrame, PreviewFrame
 end
 
 -- ==============================================================================
 -- INITIALIZATION & BINDINGS
 -- ==============================================================================
 
-local GuiInstance, MainFrameInstance = BuildSaviorInterface()
+local GuiInstance, MainFrameInstance, PreviewFrameInstance = BuildSaviorInterface()
 
 -- Visibility / Menu Keybind
 Services.UserInputService.InputBegan:Connect(function(input, processed)
     if input.KeyCode == State.UI.ToggleKey then
         State.UI.Visible = not State.UI.Visible
         MainFrameInstance.Visible = State.UI.Visible
+        if PreviewFrameInstance then
+            PreviewFrameInstance.Visible = State.UI.Visible and State.ESP.Enabled
+        end
     end
 
     -- Aimbot Key Activation
