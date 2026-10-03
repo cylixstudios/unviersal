@@ -36,12 +36,6 @@ local State = {
         SmoothnessY = 5,
         TargetPart = "Head", -- "Head", "Body", "Torso", "HumanoidRootPart", "Closest"
         BodyPriority = false,
-        Magic = false, -- Magic Bullet (Silent hit redirection)
-        MagicPenetrate = true, -- Penetrate all builds & structures
-        MagicHitChance = 100, -- Hit probability (10 - 100%)
-        MagicRadius = 400, -- Magic bullet acquisition radius
-        MagicTargetPart = "Head", -- Target hitbox: Head, Body, Torso, HumanoidRootPart, Closest
-        MagicTracer = false, -- Visual beam tracer when redirected
         Active = false
     },
     ESP = {
@@ -262,7 +256,6 @@ end
 -- Raycasting Visibility Check
 local function IsVisible(targetPart)
     if not targetPart then return false end
-    if State.Aimbot.Magic then return true end -- Magic bypasses all obstacle & build checks
     local origin = Camera.CFrame.Position
     local direction = targetPart.Position - origin
 
@@ -340,19 +333,18 @@ end
 local LockedTarget = nil
 
 -- Target Acquisition with Target Locking & Custom Radius
-local function GetClosestTarget(customRadius, customHitbox)
+local function GetClosestTarget(customRadius)
     local maxDist = customRadius or State.Aimbot.FOVSize
-    local chosenHitbox = customHitbox or (State.Aimbot.Magic and (State.Aimbot.MagicTargetPart or State.Aimbot.TargetPart)) or State.Aimbot.TargetPart
 
     -- Check if locked target is still valid and tracking
     if LockedTarget and LockedTarget.Player and LockedTarget.Player.Parent then
         local char = LockedTarget.Player.Character
         local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-        local targetPart = char and GetHitboxPart(char, chosenHitbox)
+        local targetPart = char and GetHitboxPart(char, State.Aimbot.TargetPart)
 
         if humanoid and humanoid.Health > 0 and targetPart then
             local isTeammate = State.Aimbot.TeamCheck and IsTeammate(LockedTarget.Player)
-            local isOccluded = not State.Aimbot.Magic and State.Aimbot.WallCheck and not IsVisible(targetPart)
+            local isOccluded = State.Aimbot.WallCheck and not IsVisible(targetPart)
 
             if not isTeammate and not isOccluded then
                 local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
@@ -383,26 +375,16 @@ local function GetClosestTarget(customRadius, customHitbox)
         if player ~= LocalPlayer and player.Character then
             local char = player.Character
             local humanoid = char:FindFirstChildOfClass("Humanoid")
-            local targetPart = GetHitboxPart(char, chosenHitbox)
+            local targetPart = GetHitboxPart(char, State.Aimbot.TargetPart)
 
             if humanoid and humanoid.Health > 0 and targetPart then
                 if not (State.Aimbot.TeamCheck and IsTeammate(player)) then
-                    if State.Aimbot.Magic or not (State.Aimbot.WallCheck and not IsVisible(targetPart)) then
+                    if not (State.Aimbot.WallCheck and not IsVisible(targetPart)) then
                         local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
                         if onScreen then
                             local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
                             if dist < shortestDist then
                                 shortestDist = dist
-                                bestTarget = {
-                                    Player = player,
-                                    Part = targetPart,
-                                    Position = targetPart.Position,
-                                    Velocity = targetPart.AssemblyLinearVelocity or Vector3.zero
-                                }
-                            end
-                        elseif State.Aimbot.Magic then
-                            local worldDist = (targetPart.Position - Camera.CFrame.Position).Magnitude
-                            if worldDist <= (maxDist * 0.4) and (shortestDist == maxDist) then
                                 bestTarget = {
                                     Player = player,
                                     Part = targetPart,
@@ -717,215 +699,6 @@ local function StepVisuals()
     end
 end
 
--- ==============================================================================
--- MAGIC ENGINE: Zero-Lag Event-Driven Build Penetration & Bullet Routing
--- ==============================================================================
-
-local BuildOriginalState = {}
-local MagicDescendantConn = nil
-
-local function IsPlayerBuild(instance)
-    if not instance or not instance:IsA("BasePart") then return false end
-    if instance.Parent == Services.Workspace.Terrain then return false end
-
-    -- Fast-check: Ignore player characters
-    for _, p in ipairs(Services.Players:GetPlayers()) do
-        if p.Character and instance:IsDescendantOf(p.Character) then
-            return false
-        end
-    end
-
-    local name = string.lower(instance.Name)
-    local pName = instance.Parent and string.lower(instance.Parent.Name) or ""
-
-    if string.find(pName, "build") or string.find(pName, "structure") or string.find(pName, "debris") or 
-       string.find(pName, "construct") or string.find(pName, "obstacle") or string.find(pName, "prop") or
-       string.find(pName, "barrier") or string.find(pName, "map") or string.find(pName, "geometry") then
-        return true
-    end
-
-    if string.find(name, "wall") or string.find(name, "ramp") or string.find(name, "floor") or
-       string.find(name, "stair") or string.find(name, "roof") or string.find(name, "cone") or
-       string.find(name, "build") or string.find(name, "wood") or string.find(name, "brick") or
-       string.find(name, "metal") or string.find(name, "stone") or string.find(name, "barrier") or
-       string.find(name, "box") or string.find(name, "cover") or string.find(name, "door") or
-       string.find(name, "window") or string.find(name, "glass") or string.find(name, "fence") or
-       string.find(name, "gate") or string.find(name, "crate") or string.find(name, "pillar") or
-       string.find(name, "column") or string.find(name, "block") or string.find(name, "barricade") or
-       string.find(name, "shield") or string.find(name, "fort") or string.find(name, "bunker") or
-       string.find(name, "rock") or string.find(name, "obstacle") or string.find(name, "foliage") or
-       string.find(name, "tree") or string.find(name, "bush") or string.find(name, "mesh") then
-        return true
-    end
-
-    return false
-end
-
-local function ApplyMagicBuild(part)
-    if not part:IsA("BasePart") then return end
-    if not BuildOriginalState[part] then
-        BuildOriginalState[part] = {
-            CanQuery = part.CanQuery,
-            CanCollide = part.CanCollide,
-            Transparency = part.Transparency
-        }
-    end
-    pcall(function()
-        part.CanQuery = false
-        local name = string.lower(part.Name)
-        local isFloor = string.find(name, "floor") or string.find(name, "ground") or 
-                        string.find(name, "bottom") or string.find(name, "terrain") or 
-                        string.find(name, "base") or string.find(name, "platform")
-        if not isFloor then
-            part.CanCollide = false
-        end
-        if part.Transparency < 0.5 then
-            part.Transparency = 0.55
-        end
-    end)
-end
-
-local function RestoreMagicBuild(part)
-    local orig = BuildOriginalState[part]
-    if orig and part and part.Parent then
-        pcall(function()
-            part.CanQuery = orig.CanQuery
-            part.CanCollide = orig.CanCollide
-            part.Transparency = orig.Transparency
-        end)
-    end
-    BuildOriginalState[part] = nil
-end
-
--- Asynchronous, zero-lag Magic activation & restoration
-local function SetMagicState(enabled)
-    State.Aimbot.Magic = enabled
-    if enabled then
-        if State.Aimbot.MagicPenetrate then
-            -- 1. Scan builds asynchronously in micro-batches (never freezes/lags the main thread)
-            task.spawn(function()
-                local folders = {
-                    Services.Workspace:FindFirstChild("Builds"),
-                    Services.Workspace:FindFirstChild("Structures"),
-                    Services.Workspace:FindFirstChild("Building"),
-                    Services.Workspace:FindFirstChild("Debris"),
-                    Services.Workspace:FindFirstChild("Map"),
-                    Services.Workspace:FindFirstChild("Environment")
-                }
-                local foundFolder = false
-                for _, f in ipairs(folders) do
-                    if f then
-                        foundFolder = true
-                        for _, obj in ipairs(f:GetDescendants()) do
-                            if not (State.Aimbot.Magic and State.Aimbot.MagicPenetrate) then return end
-                            if IsPlayerBuild(obj) then
-                                ApplyMagicBuild(obj)
-                            end
-                        end
-                    end
-                end
-
-                if not foundFolder then
-                    local batchCount = 0
-                    for _, obj in ipairs(Services.Workspace:GetChildren()) do
-                        if not (State.Aimbot.Magic and State.Aimbot.MagicPenetrate) then return end
-                        if obj ~= LocalPlayer.Character and obj ~= Services.Workspace.Terrain then
-                            for _, child in ipairs(obj:GetDescendants()) do
-                                if IsPlayerBuild(child) then
-                                    ApplyMagicBuild(child)
-                                end
-                                batchCount = batchCount + 1
-                                if batchCount % 150 == 0 then
-                                    task.wait()
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
-
-            -- 2. Pure event listener: catches new builds placed by players with zero frame cost
-            if not MagicDescendantConn then
-                MagicDescendantConn = Services.Workspace.DescendantAdded:Connect(function(child)
-                    if State.Aimbot.Magic and State.Aimbot.MagicPenetrate and IsPlayerBuild(child) then
-                        ApplyMagicBuild(child)
-                    end
-                end)
-                table.insert(ActiveConnections, MagicDescendantConn)
-            end
-        end
-    else
-        -- Clean up event listener and restore builds
-        if MagicDescendantConn then
-            pcall(function() MagicDescendantConn:Disconnect() end)
-            MagicDescendantConn = nil
-        end
-        task.spawn(function()
-            for part, _ in pairs(BuildOriginalState) do
-                RestoreMagicBuild(part)
-            end
-        end)
-    end
-end
-
--- Penetration Toggle Helper: dynamically enables/disables physical build pass-through
-local function SetMagicPenetrate(enabled)
-    State.Aimbot.MagicPenetrate = enabled
-    if State.Aimbot.Magic then
-        if enabled then
-            SetMagicState(true)
-        else
-            if MagicDescendantConn then
-                pcall(function() MagicDescendantConn:Disconnect() end)
-                MagicDescendantConn = nil
-            end
-            task.spawn(function()
-                for part, _ in pairs(BuildOriginalState) do
-                    RestoreMagicBuild(part)
-                end
-            end)
-        end
-    end
-end
-
--- Visual Tracer Beam Renderer (Draws temporary high-visibility neon tracer)
-local function DrawMagicTracer(fromPos, toPos)
-    if not State.Aimbot.MagicTracer then return end
-    task.spawn(function()
-        pcall(function()
-            local distance = (toPos - fromPos).Magnitude
-            if distance < 1 or distance > 2500 then return end
-
-            local beam = Instance.new("Part")
-            beam.Name = "SaviorTracer"
-            beam.Anchored = true
-            beam.CanCollide = false
-            beam.CanQuery = false
-            beam.CanTouch = false
-            beam.Material = Enum.Material.Neon
-            beam.Color = Color3.fromRGB(255, 255, 255)
-            beam.Size = Vector3.new(0.08, 0.08, distance)
-            beam.CFrame = CFrame.lookAt(fromPos, toPos) * CFrame.new(0, 0, -distance / 2)
-            beam.Transparency = 0.2
-            beam.Parent = Services.Workspace
-
-            local tween = Services.TweenService:Create(beam, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                Transparency = 1,
-                Size = Vector3.new(0.02, 0.02, distance)
-            })
-            tween:Play()
-            tween.Completed:Connect(function()
-                beam:Destroy()
-            end)
-            task.delay(0.35, function()
-                if beam and beam.Parent then
-                    beam:Destroy()
-                end
-            end)
-        end)
-    end)
-end
-
 -- Resolve Savior Hub Logo Asset (Local Cache -> Embedded Base64 -> Remote Repository)
 local function GetHubLogoAsset()
     local defaultIcon = "rbxassetid://6031075931"
@@ -978,222 +751,6 @@ local function GetHubLogoAsset()
     end
     return defaultIcon
 end
-
--- Metamethod and Engine Function Interception Helper
-local function HookMeta(target, metamethod, hook)
-    if hookmetamethod and typeof(hookmetamethod) == "function" then
-        return hookmetamethod(target, metamethod, hook)
-    elseif getrawmetatable and setreadonly then
-        local mt = getrawmetatable(target)
-        local old = mt[metamethod]
-        setreadonly(mt, false)
-        mt[metamethod] = hook
-        setreadonly(mt, true)
-        return old
-    end
-    return nil
-end
-
--- Universal Magic Bullet Penetration Hook (Fires directly through walls & player builds)
-pcall(function()
-    local oldNamecall
-    local oldIndex
-
-    local function ProcessRaycast(self, origin, direction, params, origFn)
-        if State.Aimbot.Magic and not checkcaller() then
-            local roll = math.random(1, 100)
-            if roll <= (State.Aimbot.MagicHitChance or 100) then
-                local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius, State.Aimbot.MagicTargetPart)
-                if target and target.Part then
-                    local targetPos = target.Part.Position
-                    local toTarget = targetPos - origin
-                    local dirUnit = toTarget.Magnitude > 0 and toTarget.Unit or Camera.CFrame.LookVector
-
-                    local newOrigin = targetPos - (dirUnit * 0.5)
-                    local newDirection = dirUnit * 5
-
-                    DrawMagicTracer(origin, targetPos)
-
-                    if typeof(params) == "RaycastParams" then
-                        if params.FilterType == Enum.RaycastFilterType.Include then
-                            local list = params.FilterDescendantsInstances or {}
-                            local hasTarget = false
-                            for _, inst in ipairs(list) do
-                                if inst == target.Player.Character or inst == target.Part then
-                                    hasTarget = true
-                                    break
-                                end
-                            end
-                            if not hasTarget then
-                                table.insert(list, target.Player.Character or target.Part)
-                                params.FilterDescendantsInstances = list
-                            end
-                        elseif params.FilterType == Enum.RaycastFilterType.Exclude then
-                            local list = params.FilterDescendantsInstances
-                            if list and #list > 0 then
-                                local clean = {}
-                                for _, inst in ipairs(list) do
-                                    if inst ~= target.Player.Character and not (target.Part and target.Part:IsDescendantOf(inst)) then
-                                        table.insert(clean, inst)
-                                    end
-                                end
-                                params.FilterDescendantsInstances = clean
-                            end
-                        end
-                    end
-
-                    local result = origFn(self, newOrigin, newDirection, params)
-                    if result then
-                        return result
-                    end
-
-                    local fbParams = RaycastParams.new()
-                    fbParams.FilterType = Enum.RaycastFilterType.Exclude
-                    fbParams.FilterDescendantsInstances = { LocalPlayer.Character }
-                    fbParams.IgnoreWater = true
-                    local fbResult = origFn(self, newOrigin, newDirection, fbParams)
-                    if fbResult then
-                        return fbResult
-                    end
-                end
-            end
-        end
-        return origFn(self, origin, direction, params)
-    end
-
-    oldNamecall = HookMeta(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        local lMethod = string.lower(method)
-        local args = {...}
-
-        if State.Aimbot.Magic and not checkcaller() then
-            if lMethod == "raycast" and (self == Services.Workspace or (typeof(self) == "Instance" and self:IsA("WorldRoot"))) then
-                return ProcessRaycast(self, args[1], args[2], args[3], function(s, o, d, p)
-                    return oldNamecall(s, o, d, p)
-                end)
-            elseif string.find(lMethod, "findpartonray") then
-                local roll = math.random(1, 100)
-                if roll <= (State.Aimbot.MagicHitChance or 100) then
-                    local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius, State.Aimbot.MagicTargetPart)
-                    if target and target.Part then
-                        local rayObj = args[1]
-                        local oPos = (typeof(rayObj) == "Ray" and rayObj.Origin) or Camera.CFrame.Position
-                        DrawMagicTracer(oPos, target.Part.Position)
-                        return target.Part, target.Part.Position, Vector3.new(0, 1, 0), target.Part.Material
-                    end
-                end
-            elseif (lMethod == "screenpointtoray" or lMethod == "viewportpointtoray") and self == Camera then
-                local roll = math.random(1, 100)
-                if roll <= (State.Aimbot.MagicHitChance or 100) then
-                    local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius, State.Aimbot.MagicTargetPart)
-                    if target and target.Part then
-                        local camPos = Camera.CFrame.Position
-                        local dir = (target.Part.Position - camPos).Unit * 1000
-                        return Ray.new(camPos, dir)
-                    end
-                end
-            elseif (lMethod == "fireserver" or lMethod == "invokeserver") and typeof(self) == "Instance" and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
-                local rName = string.lower(self.Name)
-                local isCombatRemote = string.find(rName, "shoot") or string.find(rName, "hit") or string.find(rName, "fire") or 
-                    string.find(rName, "bullet") or string.find(rName, "attack") or string.find(rName, "damage") or
-                    string.find(rName, "gun") or string.find(rName, "weapon") or string.find(rName, "shot") or
-                    string.find(rName, "projectile") or string.find(rName, "impact") or string.find(rName, "cast") or
-                    string.find(rName, "deal") or string.find(rName, "combat") or string.find(rName, "ray") or
-                    string.find(rName, "slash") or string.find(rName, "swing")
-
-                if isCombatRemote then
-                    local roll = math.random(1, 100)
-                    if roll <= (State.Aimbot.MagicHitChance or 100) then
-                        local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius, State.Aimbot.MagicTargetPart)
-                        if target and target.Part then
-                            local tPart = target.Part
-                            local tPos = target.Part.Position
-                            DrawMagicTracer(Camera.CFrame.Position, tPos)
-                            for i, arg in ipairs(args) do
-                                if typeof(arg) == "Instance" and arg:IsA("BasePart") then
-                                    args[i] = tPart
-                                elseif typeof(arg) == "Vector3" then
-                                    local diff = (arg - tPos).Magnitude
-                                    if diff > 1 and diff < 500 then
-                                        args[i] = tPos
-                                    end
-                                elseif typeof(arg) == "CFrame" then
-                                    args[i] = tPart.CFrame
-                                elseif typeof(arg) == "table" then
-                                    for k, v in pairs(arg) do
-                                        if typeof(v) == "Instance" and v:IsA("BasePart") then
-                                            arg[k] = tPart
-                                        elseif typeof(v) == "Vector3" then
-                                            local kLow = string.lower(tostring(k))
-                                            if string.find(kLow, "hit") or string.find(kLow, "pos") or string.find(kLow, "target") or string.find(kLow, "end") then
-                                                arg[k] = tPos
-                                            end
-                                        elseif typeof(v) == "CFrame" then
-                                            arg[k] = tPart.CFrame
-                                        end
-                                    end
-                                end
-                            end
-                            return oldNamecall(self, table.unpack(args))
-                        end
-                    end
-                end
-            end
-        end
-        return oldNamecall(self, ...)
-    end)
-
-    oldIndex = HookMeta(game, "__index", function(self, key)
-        if State.Aimbot.Magic and not checkcaller() then
-            if typeof(self) == "Instance" and self:IsA("Mouse") then
-                local roll = math.random(1, 100)
-                if roll <= (State.Aimbot.MagicHitChance or 100) then
-                    local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius, State.Aimbot.MagicTargetPart)
-                    if target and target.Part then
-                        if key == "Hit" then
-                            return target.Part.CFrame
-                        elseif key == "Target" then
-                            return target.Part
-                        elseif key == "UnitRay" then
-                            local origin = Camera.CFrame.Position
-                            return Ray.new(origin, (target.Part.Position - origin).Unit)
-                        elseif key == "Origin" then
-                            return Camera.CFrame
-                        end
-                    end
-                end
-            end
-        end
-        return oldIndex(self, key)
-    end)
-
-    -- Hook function fallbacks for direct method invocations
-    if hookfunction and typeof(hookfunction) == "function" then
-        if Services.Workspace and Services.Workspace.Raycast then
-            local oldWsRaycast
-            oldWsRaycast = hookfunction(Services.Workspace.Raycast, function(self, origin, direction, params)
-                return ProcessRaycast(self, origin, direction, params, oldWsRaycast)
-            end)
-        end
-        if Services.Workspace and Services.Workspace.FindPartOnRayWithIgnoreList then
-            local oldFindIgnore
-            oldFindIgnore = hookfunction(Services.Workspace.FindPartOnRayWithIgnoreList, function(self, ray, ignoreList, ...)
-                if State.Aimbot.Magic and not checkcaller() then
-                    local roll = math.random(1, 100)
-                    if roll <= (State.Aimbot.MagicHitChance or 100) then
-                        local target = LockedTarget or GetClosestTarget(State.Aimbot.MagicRadius, State.Aimbot.MagicTargetPart)
-                        if target and target.Part then
-                            local oPos = (typeof(ray) == "Ray" and ray.Origin) or Camera.CFrame.Position
-                            DrawMagicTracer(oPos, target.Part.Position)
-                            return target.Part, target.Part.Position, Vector3.new(0, 1, 0), target.Part.Material
-                        end
-                    end
-                end
-                return oldFindIgnore(self, ray, ignoreList, ...)
-            end)
-        end
-    end
-end)
 
 -- ==============================================================================
 -- GUI CONSTRUCTION: Savior Hub
@@ -2476,35 +2033,6 @@ local function BuildSaviorInterface()
         ShowToast(val and "Body targeting prioritized" or "Default hitbox prioritized")
     end, nil, NextAim())
 
-    -- Magic Bullet Feature Suite
-    CreateToggleRow(AimCard, "Magic Bullet", true, State.Aimbot.Magic, function(val)
-        SetMagicState(val)
-        ShowToast(val and "Magic Bullet: Activated" or "Magic Bullet: Deactivated")
-    end, nil, NextAim())
-
-    CreateToggleRow(AimCard, "Penetrate Builds", true, State.Aimbot.MagicPenetrate, function(val)
-        SetMagicPenetrate(val)
-        ShowToast(val and "Build Penetration: Enabled" or "Build Penetration: Disabled")
-    end, nil, NextAim())
-
-    CreateSelectorRow(AimCard, "Magic Hitbox", {"Head", "Body", "Torso", "HumanoidRootPart", "Closest"}, State.Aimbot.MagicTargetPart, function(selected)
-        State.Aimbot.MagicTargetPart = selected
-        ShowToast("Magic Hitbox set to: " .. selected)
-    end, NextAim())
-
-    CreateSliderRow(AimCard, "Hit Chance %", 10, 100, State.Aimbot.MagicHitChance, function(val)
-        State.Aimbot.MagicHitChance = val
-    end, NextAim())
-
-    CreateSliderRow(AimCard, "Magic Hit Radius", 50, 800, State.Aimbot.MagicRadius, function(val)
-        State.Aimbot.MagicRadius = val
-    end, NextAim())
-
-    CreateToggleRow(AimCard, "Tracer Beam", true, State.Aimbot.MagicTracer, function(val)
-        State.Aimbot.MagicTracer = val
-        ShowToast(val and "Tracer Beam: Enabled" or "Tracer Beam: Disabled")
-    end, nil, NextAim())
-
     CreateToggleRow(AimCard, "Team Check", true, State.Aimbot.TeamCheck, function(val)
         State.Aimbot.TeamCheck = val
     end, nil, NextAim())
@@ -3027,9 +2555,6 @@ local function BuildSaviorInterface()
 
     local function UnloadSystem()
         pcall(function() Services.RunService:UnbindFromRenderStep("SaviorHubCameraStep") end)
-        for part, _ in pairs(BuildOriginalState) do
-            RestoreMagicBuild(part)
-        end
         for _, conn in ipairs(ActiveConnections) do
             pcall(function() conn:Disconnect() end)
         end
