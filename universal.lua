@@ -2810,76 +2810,676 @@ local function BuildSaviorInterface()
 end
 
 -- ==============================================================================
+-- AUTHENTICATION GATEWAY (auttttth.png)
+-- ==============================================================================
+local AuthConfig = {
+    ApiUrl = "http://127.0.0.1:8080",
+    DiscordInvite = "https://discord.gg/saviorhub",
+    GetKeyUrl = "https://discord.gg/saviorhub",
+    KeyFileName = "savior_key.dat",
+    DevTestKey = "SAVIOR-DEV-TEST",
+    AppTitle = "SYNTRIX",
+    AppSubtitle = "DA7MU TEST • KEY SYSTEM"
+}
+
+local function GetClientHWID()
+    local hwid = nil
+    pcall(function()
+        if gethwid then
+            hwid = gethwid()
+        elseif get_hwid then
+            hwid = get_hwid()
+        end
+    end)
+    if not hwid or typeof(hwid) ~= "string" or #hwid < 4 then
+        local uid = (LocalPlayer and LocalPlayer.UserId) or 0
+        hwid = "DEV-" .. tostring(uid)
+    end
+    return hwid
+end
+
+local function SafeHttpRequest(url)
+    local reqFn = (syn and syn.request) or request or (http and http.request) or http_request
+    if reqFn then
+        local ok, response = pcall(function()
+            return reqFn({
+                Url = url,
+                Method = "GET",
+                Headers = {
+                    ["User-Agent"] = "SyntrixLoader/3.0",
+                    ["Accept"] = "application/json"
+                }
+            })
+        end)
+        if ok and response then
+            local body = response.Body or response.body
+            if body and typeof(body) == "string" and #body > 0 then
+                return body
+            end
+        end
+    end
+
+    local isLocalhost = string.find(url, "127.0.0.1") or string.find(url, "localhost")
+    if not isLocalhost and game and game.HttpGet then
+        local ok, body = pcall(function()
+            return game:HttpGet(url, true)
+        end)
+        if ok and body and typeof(body) == "string" and #body > 0 then
+            return body
+        end
+    end
+
+    return nil
+end
+
+local function SaveKey(key)
+    local writeFn = writefile or (syn and syn.write_file)
+    if writeFn and key and #key > 0 then
+        pcall(writeFn, AuthConfig.KeyFileName, key)
+    end
+end
+
+local function LoadSavedKey()
+    local isFileFn = isfile or (syn and syn.is_file)
+    local readFn = readfile or (syn and syn.read_file)
+    if isFileFn and readFn and isFileFn(AuthConfig.KeyFileName) then
+        local ok, key = pcall(readFn, AuthConfig.KeyFileName)
+        if ok and key and typeof(key) == "string" then
+            key = string.gsub(key, "^%s*(.-)%s*$", "%1")
+            if #key > 0 then
+                return key
+            end
+        end
+    end
+    return nil
+end
+
+local function ValidateLicenseKey(key)
+    local k = string.gsub(key or "", "^%s*(.-)%s*$", "%1")
+    if #k == 0 then
+        return false, "Please enter your license key."
+    end
+
+    if AuthConfig.DevTestKey and (k == AuthConfig.DevTestKey or k == "SYNTRIX-DEV" or k == "DEV-TEST") then
+        return true, "Developer offline key accepted."
+    end
+
+    local hwid = GetClientHWID()
+    local rUser = LocalPlayer and LocalPlayer.Name or "Unknown"
+    local rUid = LocalPlayer and LocalPlayer.UserId or 0
+
+    local url = string.format(
+        "%s/api/verify?key=%s&hwid=%s&user=%s&uid=%s",
+        AuthConfig.ApiUrl,
+        Services.HttpService:UrlEncode(k),
+        Services.HttpService:UrlEncode(hwid),
+        Services.HttpService:UrlEncode(rUser),
+        tostring(rUid)
+    )
+
+    local raw = SafeHttpRequest(url)
+    if not raw or #raw == 0 then
+        return false, "Auth server offline. (Dev key: " .. AuthConfig.DevTestKey .. ")"
+    end
+
+    local ok, data = pcall(function()
+        return Services.HttpService:JSONDecode(raw)
+    end)
+
+    if not ok or not data then
+        return false, "Invalid response from authentication server."
+    end
+
+    if data.status == "success" then
+        return true, data.message or "Authentication successful!"
+    else
+        return false, data.message or "Invalid or expired license key."
+    end
+end
+
+local function ShowAuthGateway(onAuthenticated)
+    local guiParent = Services.CoreGui or (LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui"))
+    local oldAuth = guiParent:FindFirstChild("SaviorAuthGatewayScreen")
+    if oldAuth then pcall(function() oldAuth:Destroy() end) end
+
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "SaviorAuthGatewayScreen"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+    local CenterFrame = Instance.new("Frame")
+    CenterFrame.Name = "AuthFrame"
+    CenterFrame.Size = UDim2.new(0, 350, 0, 252)
+    CenterFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    CenterFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    CenterFrame.BackgroundColor3 = Color3.fromRGB(11, 15, 14)
+    CenterFrame.BorderSizePixel = 0
+    CenterFrame.ClipsDescendants = true
+    CenterFrame.Parent = ScreenGui
+
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 14)
+    Corner.Parent = CenterFrame
+
+    local Stroke = Instance.new("UIStroke")
+    Stroke.Color = Color3.fromRGB(24, 38, 32)
+    Stroke.Thickness = 1.2
+    Stroke.Parent = CenterFrame
+
+    -- Header
+    local HeaderFrame = Instance.new("Frame")
+    HeaderFrame.Size = UDim2.new(1, -28, 0, 30)
+    HeaderFrame.Position = UDim2.new(0, 14, 0, 12)
+    HeaderFrame.BackgroundTransparency = 1
+    HeaderFrame.Parent = CenterFrame
+
+    local LogoIcon = Instance.new("ImageLabel")
+    LogoIcon.Size = UDim2.new(0, 24, 0, 24)
+    LogoIcon.Position = UDim2.new(0, 0, 0, 2)
+    LogoIcon.BackgroundTransparency = 1
+    LogoIcon.Image = GetHubLogoAsset()
+    LogoIcon.ImageColor3 = Color3.fromRGB(0, 230, 153)
+    LogoIcon.ScaleType = Enum.ScaleType.Fit
+    LogoIcon.Parent = HeaderFrame
+
+    local BrandTitle = Instance.new("TextLabel")
+    BrandTitle.Size = UDim2.new(0, 200, 0, 15)
+    BrandTitle.Position = UDim2.new(0, 32, 0, 0)
+    BrandTitle.BackgroundTransparency = 1
+    BrandTitle.Text = AuthConfig.AppTitle
+    BrandTitle.Font = Enum.Font.GothamBold
+    BrandTitle.TextSize = 13
+    BrandTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    BrandTitle.TextXAlignment = Enum.TextXAlignment.Left
+    BrandTitle.Parent = HeaderFrame
+
+    local BrandSubtitle = Instance.new("TextLabel")
+    BrandSubtitle.Size = UDim2.new(0, 200, 0, 13)
+    BrandSubtitle.Position = UDim2.new(0, 32, 0, 15)
+    BrandSubtitle.BackgroundTransparency = 1
+    BrandSubtitle.Text = AuthConfig.AppSubtitle
+    BrandSubtitle.Font = Enum.Font.GothamMedium
+    BrandSubtitle.TextSize = 9
+    BrandSubtitle.TextColor3 = Color3.fromRGB(110, 128, 120)
+    BrandSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+    BrandSubtitle.Parent = HeaderFrame
+
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 22, 0, 22)
+    CloseBtn.Position = UDim2.new(1, -22, 0, 2)
+    CloseBtn.BackgroundTransparency = 1
+    CloseBtn.Text = "✕"
+    CloseBtn.Font = Enum.Font.GothamMedium
+    CloseBtn.TextSize = 13
+    CloseBtn.TextColor3 = Color3.fromRGB(110, 128, 120)
+    CloseBtn.AutoButtonColor = false
+    CloseBtn.Parent = HeaderFrame
+
+    CloseBtn.MouseEnter:Connect(function() CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255) end)
+    CloseBtn.MouseLeave:Connect(function() CloseBtn.TextColor3 = Color3.fromRGB(110, 128, 120) end)
+    CloseBtn.MouseButton1Click:Connect(function()
+        Services.TweenService:Create(CenterFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Position = UDim2.new(0.5, 0, 0.5, 30),
+            BackgroundTransparency = 1
+        }):Play()
+        Services.TweenService:Create(Stroke, TweenInfo.new(0.25), {Transparency = 1}):Play()
+        task.wait(0.26)
+        pcall(function() ScreenGui:Destroy() end)
+    end)
+
+    -- Authentication Required
+    local AuthHeaderContainer = Instance.new("Frame")
+    AuthHeaderContainer.Size = UDim2.new(1, -28, 0, 34)
+    AuthHeaderContainer.Position = UDim2.new(0, 14, 0, 50)
+    AuthHeaderContainer.BackgroundTransparency = 1
+    AuthHeaderContainer.Parent = CenterFrame
+
+    local AccentBar = Instance.new("Frame")
+    AccentBar.Size = UDim2.new(0, 3, 0, 16)
+    AccentBar.Position = UDim2.new(0, 0, 0, 1)
+    AccentBar.BackgroundColor3 = Color3.fromRGB(0, 230, 153)
+    AccentBar.BorderSizePixel = 0
+    AccentBar.Parent = AuthHeaderContainer
+
+    local BarCorner = Instance.new("UICorner")
+    BarCorner.CornerRadius = UDim.new(0, 2)
+    BarCorner.Parent = AccentBar
+
+    local ReqTitle = Instance.new("TextLabel")
+    ReqTitle.Size = UDim2.new(1, -12, 0, 17)
+    ReqTitle.Position = UDim2.new(0, 9, 0, 0)
+    ReqTitle.BackgroundTransparency = 1
+    ReqTitle.Text = "Authentication Required"
+    ReqTitle.Font = Enum.Font.GothamBold
+    ReqTitle.TextSize = 14
+    ReqTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ReqTitle.TextXAlignment = Enum.TextXAlignment.Left
+    ReqTitle.Parent = AuthHeaderContainer
+
+    local ReqSubtitle = Instance.new("TextLabel")
+    ReqSubtitle.Size = UDim2.new(1, -12, 0, 14)
+    ReqSubtitle.Position = UDim2.new(0, 9, 0, 17)
+    ReqSubtitle.BackgroundTransparency = 1
+    ReqSubtitle.Text = "Enter your license key below to unlock access."
+    ReqSubtitle.Font = Enum.Font.Gotham
+    ReqSubtitle.TextSize = 11
+    ReqSubtitle.TextColor3 = Color3.fromRGB(130, 145, 140)
+    ReqSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+    ReqSubtitle.Parent = AuthHeaderContainer
+
+    -- LICENSE KEY Input Field
+    local KeyLabel = Instance.new("TextLabel")
+    KeyLabel.Size = UDim2.new(1, -28, 0, 12)
+    KeyLabel.Position = UDim2.new(0, 14, 0, 90)
+    KeyLabel.BackgroundTransparency = 1
+    KeyLabel.Text = "LICENSE KEY"
+    KeyLabel.Font = Enum.Font.GothamBold
+    KeyLabel.TextSize = 9
+    KeyLabel.TextColor3 = Color3.fromRGB(110, 128, 120)
+    KeyLabel.TextXAlignment = Enum.TextXAlignment.Left
+    KeyLabel.Parent = CenterFrame
+
+    local InputContainer = Instance.new("Frame")
+    InputContainer.Size = UDim2.new(1, -28, 0, 34)
+    InputContainer.Position = UDim2.new(0, 14, 0, 104)
+    InputContainer.BackgroundColor3 = Color3.fromRGB(14, 20, 18)
+    InputContainer.BorderSizePixel = 0
+    InputContainer.Parent = CenterFrame
+
+    local InputCorner = Instance.new("UICorner")
+    InputCorner.CornerRadius = UDim.new(0, 8)
+    InputCorner.Parent = InputContainer
+
+    local InputStroke = Instance.new("UIStroke")
+    InputStroke.Color = Color3.fromRGB(31, 46, 39)
+    InputStroke.Thickness = 1
+    InputStroke.Parent = InputContainer
+
+    local KeyIcon = Instance.new("TextLabel")
+    KeyIcon.Size = UDim2.new(0, 20, 0, 20)
+    KeyIcon.Position = UDim2.new(0, 8, 0.5, -10)
+    KeyIcon.BackgroundTransparency = 1
+    KeyIcon.Text = "🔑"
+    KeyIcon.TextSize = 14
+    KeyIcon.Parent = InputContainer
+
+    local KeyTextBox = Instance.new("TextBox")
+    KeyTextBox.Size = UDim2.new(1, -38, 1, 0)
+    KeyTextBox.Position = UDim2.new(0, 32, 0, 0)
+    KeyTextBox.BackgroundTransparency = 1
+    KeyTextBox.Text = ""
+    KeyTextBox.PlaceholderText = "XXXX-XXXX-XXXX-XXXX"
+    KeyTextBox.PlaceholderColor3 = Color3.fromRGB(60, 75, 70)
+    KeyTextBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+    KeyTextBox.Font = Enum.Font.GothamMedium
+    KeyTextBox.TextSize = 11
+    KeyTextBox.TextXAlignment = Enum.TextXAlignment.Left
+    KeyTextBox.ClearTextOnFocus = false
+    KeyTextBox.Parent = InputContainer
+
+    local CounterLabel = Instance.new("TextLabel")
+    CounterLabel.Size = UDim2.new(1, -28, 0, 12)
+    CounterLabel.Position = UDim2.new(0, 14, 0, 140)
+    CounterLabel.BackgroundTransparency = 1
+    CounterLabel.Text = "0/50"
+    CounterLabel.Font = Enum.Font.Gotham
+    CounterLabel.TextSize = 9
+    CounterLabel.TextColor3 = Color3.fromRGB(80, 95, 88)
+    CounterLabel.TextXAlignment = Enum.TextXAlignment.Right
+    CounterLabel.Parent = CenterFrame
+
+    KeyTextBox:GetPropertyChangedSignal("Text"):Connect(function()
+        local len = #KeyTextBox.Text
+        CounterLabel.Text = string.format("%d/50", len)
+        CounterLabel.TextColor3 = len > 50 and Color3.fromRGB(240, 80, 80) or Color3.fromRGB(80, 95, 88)
+    end)
+
+    KeyTextBox.Focused:Connect(function()
+        Services.TweenService:Create(InputStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(0, 230, 153)}):Play()
+    end)
+    KeyTextBox.FocusLost:Connect(function()
+        Services.TweenService:Create(InputStroke, TweenInfo.new(0.2), {Color = Color3.fromRGB(31, 46, 39)}):Play()
+    end)
+
+    -- "VALIDATE KEY" Button
+    local ValidateBtn = Instance.new("TextButton")
+    ValidateBtn.Size = UDim2.new(1, -28, 0, 32)
+    ValidateBtn.Position = UDim2.new(0, 14, 0, 155)
+    ValidateBtn.BackgroundColor3 = Color3.fromRGB(13, 39, 30)
+    ValidateBtn.BorderSizePixel = 0
+    ValidateBtn.Text = "VALIDATE KEY"
+    ValidateBtn.Font = Enum.Font.GothamBold
+    ValidateBtn.TextSize = 11
+    ValidateBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ValidateBtn.AutoButtonColor = false
+    ValidateBtn.Parent = CenterFrame
+
+    local ValCorner = Instance.new("UICorner")
+    ValCorner.CornerRadius = UDim.new(0, 8)
+    ValCorner.Parent = ValidateBtn
+
+    local ValStroke = Instance.new("UIStroke")
+    ValStroke.Color = Color3.fromRGB(22, 67, 51)
+    ValStroke.Thickness = 1
+    ValStroke.Parent = ValidateBtn
+
+    ValidateBtn.MouseEnter:Connect(function()
+        Services.TweenService:Create(ValidateBtn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(18, 55, 42)}):Play()
+        Services.TweenService:Create(ValStroke, TweenInfo.new(0.18), {Color = Color3.fromRGB(30, 90, 68)}):Play()
+    end)
+    ValidateBtn.MouseLeave:Connect(function()
+        Services.TweenService:Create(ValidateBtn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(13, 39, 30)}):Play()
+        Services.TweenService:Create(ValStroke, TweenInfo.new(0.18), {Color = Color3.fromRGB(22, 67, 51)}):Play()
+    end)
+
+    -- Action Buttons Row
+    local ActionsRow = Instance.new("Frame")
+    ActionsRow.Size = UDim2.new(1, -28, 0, 28)
+    ActionsRow.Position = UDim2.new(0, 14, 0, 193)
+    ActionsRow.BackgroundTransparency = 1
+    ActionsRow.Parent = CenterFrame
+
+    local GetKeyBtn = Instance.new("TextButton")
+    GetKeyBtn.Size = UDim2.new(0.5, -4, 1, 0)
+    GetKeyBtn.Position = UDim2.new(0, 0, 0, 0)
+    GetKeyBtn.BackgroundColor3 = Color3.fromRGB(18, 24, 22)
+    GetKeyBtn.BorderSizePixel = 0
+    GetKeyBtn.Text = "🔗  GET KEY"
+    GetKeyBtn.Font = Enum.Font.GothamBold
+    GetKeyBtn.TextSize = 10
+    GetKeyBtn.TextColor3 = Color3.fromRGB(240, 240, 240)
+    GetKeyBtn.AutoButtonColor = false
+    GetKeyBtn.Parent = ActionsRow
+
+    local GkCorner = Instance.new("UICorner")
+    GkCorner.CornerRadius = UDim.new(0, 8)
+    GkCorner.Parent = GetKeyBtn
+
+    local GkStroke = Instance.new("UIStroke")
+    GkStroke.Color = Color3.fromRGB(34, 46, 41)
+    GkStroke.Thickness = 1
+    GkStroke.Parent = GetKeyBtn
+
+    GetKeyBtn.MouseEnter:Connect(function()
+        Services.TweenService:Create(GetKeyBtn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(26, 36, 32)}):Play()
+    end)
+    GetKeyBtn.MouseLeave:Connect(function()
+        Services.TweenService:Create(GetKeyBtn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(18, 24, 22)}):Play()
+    end)
+
+    local DiscordBtn = Instance.new("TextButton")
+    DiscordBtn.Size = UDim2.new(0.5, -4, 1, 0)
+    DiscordBtn.Position = UDim2.new(0.5, 4, 0, 0)
+    DiscordBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+    DiscordBtn.BorderSizePixel = 0
+    DiscordBtn.Text = "🎮  DISCORD"
+    DiscordBtn.Font = Enum.Font.GothamBold
+    DiscordBtn.TextSize = 10
+    DiscordBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    DiscordBtn.AutoButtonColor = false
+    DiscordBtn.Parent = ActionsRow
+
+    local DiscCorner = Instance.new("UICorner")
+    DiscCorner.CornerRadius = UDim.new(0, 8)
+    DiscCorner.Parent = DiscordBtn
+
+    DiscordBtn.MouseEnter:Connect(function()
+        Services.TweenService:Create(DiscordBtn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(105, 117, 245)}):Play()
+    end)
+    DiscordBtn.MouseLeave:Connect(function()
+        Services.TweenService:Create(DiscordBtn, TweenInfo.new(0.18), {BackgroundColor3 = Color3.fromRGB(88, 101, 242)}):Play()
+    end)
+
+    -- Status Row
+    local StatusRow = Instance.new("Frame")
+    StatusRow.Size = UDim2.new(1, -28, 0, 14)
+    StatusRow.Position = UDim2.new(0, 14, 0, 228)
+    StatusRow.BackgroundTransparency = 1
+    StatusRow.Parent = CenterFrame
+
+    local StatusDot = Instance.new("Frame")
+    StatusDot.Size = UDim2.new(0, 6, 0, 6)
+    StatusDot.Position = UDim2.new(0, 0, 0.5, -3)
+    StatusDot.BackgroundColor3 = Color3.fromRGB(0, 230, 153)
+    StatusDot.BorderSizePixel = 0
+    StatusDot.Parent = StatusRow
+
+    local DotCorner = Instance.new("UICorner")
+    DotCorner.CornerRadius = UDim.new(1, 0)
+    DotCorner.Parent = StatusDot
+
+    local StatusLabel = Instance.new("TextLabel")
+    StatusLabel.Size = UDim2.new(1, -12, 1, 0)
+    StatusLabel.Position = UDim2.new(0, 12, 0, 0)
+    StatusLabel.BackgroundTransparency = 1
+    StatusLabel.Text = "Awaiting input..."
+    StatusLabel.Font = Enum.Font.GothamMedium
+    StatusLabel.TextSize = 10
+    StatusLabel.TextColor3 = Color3.fromRGB(78, 154, 120)
+    StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+    StatusLabel.Parent = StatusRow
+
+    local function SetStatus(text, textColor, dotColor)
+        StatusLabel.Text = text
+        StatusLabel.TextColor3 = textColor or Color3.fromRGB(78, 154, 120)
+        StatusDot.BackgroundColor3 = dotColor or Color3.fromRGB(0, 230, 153)
+    end
+
+    local function ShakeInputBox()
+        local origX = InputContainer.Position.X.Offset
+        local origY = InputContainer.Position.Y.Offset
+        task.spawn(function()
+            for i = 1, 4 do
+                InputContainer.Position = UDim2.new(0, origX + (i % 2 == 0 and 4 or -4), 0, origY)
+                InputStroke.Color = Color3.fromRGB(240, 80, 80)
+                task.wait(0.04)
+            end
+            InputContainer.Position = UDim2.new(0, origX, 0, origY)
+            task.wait(0.5)
+            InputStroke.Color = Color3.fromRGB(31, 46, 39)
+        end)
+    end
+
+    local isValidating = false
+    local function ProcessValidation()
+        if isValidating then return end
+        local key = KeyTextBox.Text
+        key = string.gsub(key or "", "^%s*(.-)%s*$", "%1")
+
+        if #key == 0 then
+            SetStatus("Please enter a license key.", Color3.fromRGB(240, 90, 90), Color3.fromRGB(240, 90, 90))
+            ShakeInputBox()
+            return
+        end
+
+        isValidating = true
+        SetStatus("Validating license key...", Color3.fromRGB(230, 190, 60), Color3.fromRGB(230, 190, 60))
+        ValidateBtn.Text = "VALIDATING..."
+
+        task.spawn(function()
+            local success, msg = ValidateLicenseKey(key)
+            isValidating = false
+            ValidateBtn.Text = "VALIDATE KEY"
+
+            if success then
+                SetStatus("Key verified! Launching...", Color3.fromRGB(0, 230, 153), Color3.fromRGB(0, 230, 153))
+                SaveKey(key)
+                task.wait(0.35)
+                Services.TweenService:Create(CenterFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    Position = UDim2.new(0.5, 0, 0.5, -25),
+                    BackgroundTransparency = 1
+                }):Play()
+                Services.TweenService:Create(Stroke, TweenInfo.new(0.3), {Transparency = 1}):Play()
+                task.wait(0.32)
+                pcall(function() ScreenGui:Destroy() end)
+                if onAuthenticated then
+                    onAuthenticated()
+                end
+            else
+                SetStatus(msg or "Invalid key.", Color3.fromRGB(240, 80, 80), Color3.fromRGB(240, 80, 80))
+                ShakeInputBox()
+            end
+        end)
+    end
+
+    ValidateBtn.MouseButton1Click:Connect(ProcessValidation)
+    KeyTextBox.FocusLost:Connect(function(enterPressed)
+        if enterPressed then ProcessValidation() end
+    end)
+
+    GetKeyBtn.MouseButton1Click:Connect(function()
+        if SafeSetClipboard(AuthConfig.GetKeyUrl or AuthConfig.DiscordInvite) then
+            SetStatus("Key link copied to clipboard!", Color3.fromRGB(0, 230, 153), Color3.fromRGB(0, 230, 153))
+        else
+            SetStatus("Discord: " .. AuthConfig.DiscordInvite, Color3.fromRGB(0, 230, 153), Color3.fromRGB(0, 230, 153))
+        end
+    end)
+
+    DiscordBtn.MouseButton1Click:Connect(function()
+        if SafeSetClipboard(AuthConfig.DiscordInvite) then
+            SetStatus("Discord invite copied to clipboard!", Color3.fromRGB(88, 101, 242), Color3.fromRGB(88, 101, 242))
+        else
+            SetStatus("Discord: " .. AuthConfig.DiscordInvite, Color3.fromRGB(88, 101, 242), Color3.fromRGB(88, 101, 242))
+        end
+    end)
+
+    ScreenGui.Parent = guiParent
+
+    CenterFrame.Position = UDim2.new(0.5, 0, 0.5, 25)
+    CenterFrame.BackgroundTransparency = 1
+    Stroke.Transparency = 1
+
+    Services.TweenService:Create(CenterFrame, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        BackgroundTransparency = 0
+    }):Play()
+    Services.TweenService:Create(Stroke, TweenInfo.new(0.35), {Transparency = 0}):Play()
+
+    -- Auto-check saved key
+    task.spawn(function()
+        local savedKey = LoadSavedKey()
+        if savedKey and #savedKey > 0 then
+            KeyTextBox.Text = savedKey
+            SetStatus("Checking saved license...", Color3.fromRGB(230, 190, 60), Color3.fromRGB(230, 190, 60))
+            task.wait(0.25)
+            local ok, _ = ValidateLicenseKey(savedKey)
+            if ok then
+                SetStatus("Welcome back! Launching...", Color3.fromRGB(0, 230, 153), Color3.fromRGB(0, 230, 153))
+                task.wait(0.35)
+                Services.TweenService:Create(CenterFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+                    Position = UDim2.new(0.5, 0, 0.5, -25),
+                    BackgroundTransparency = 1
+                }):Play()
+                Services.TweenService:Create(Stroke, TweenInfo.new(0.3), {Transparency = 1}):Play()
+                task.wait(0.32)
+                pcall(function() ScreenGui:Destroy() end)
+                if onAuthenticated then
+                    onAuthenticated()
+                end
+                return
+            else
+                SetStatus("Saved license expired. Enter new key.", Color3.fromRGB(240, 140, 80), Color3.fromRGB(240, 140, 80))
+            end
+        end
+    end)
+end
+
+-- ==============================================================================
 -- INITIALIZATION & BINDINGS
 -- ==============================================================================
 
-local GuiInstance, MainFrameInstance, PreviewFrameInstance, UnloadFn = BuildSaviorInterface()
+local function InitializeClientFramework()
+    local GuiInstance, MainFrameInstance, PreviewFrameInstance, UnloadFn = BuildSaviorInterface()
 
--- Visibility / Menu Keybind
-local InputBeganConn = Services.UserInputService.InputBegan:Connect(function(input, processed)
-    if not processed then
-        if input.KeyCode == State.UI.ToggleKey then
-            State.UI.Visible = not State.UI.Visible
-            MainFrameInstance.Visible = State.UI.Visible
-            if PreviewFrameInstance then
-                PreviewFrameInstance.Visible = State.UI.Visible and State.ESP.Enabled
+    -- Visibility / Menu Keybind
+    local InputBeganConn = Services.UserInputService.InputBegan:Connect(function(input, processed)
+        if not processed then
+            if input.KeyCode == State.UI.ToggleKey then
+                State.UI.Visible = not State.UI.Visible
+                MainFrameInstance.Visible = State.UI.Visible
+                if PreviewFrameInstance then
+                    PreviewFrameInstance.Visible = State.UI.Visible and State.ESP.Enabled
+                end
+            end
+            if State.UI.UnloadBind ~= Enum.KeyCode.Unknown and input.KeyCode == State.UI.UnloadBind then
+                UnloadFn()
             end
         end
-        if State.UI.UnloadBind ~= Enum.KeyCode.Unknown and input.KeyCode == State.UI.UnloadBind then
-            UnloadFn()
-        end
-    end
 
-    -- Targeting Activation (Supports Keyboard and Mouse inputs, Hold or Toggle)
-    if IsKeyMatch(State.Aimbot.Keybind, input) then
-        if State.Aimbot.AimMode == "Toggle" then
-            State.Aimbot.Active = not State.Aimbot.Active
-            if not State.Aimbot.Active then
+        -- Targeting Activation (Supports Keyboard and Mouse inputs, Hold or Toggle)
+        if IsKeyMatch(State.Aimbot.Keybind, input) then
+            if State.Aimbot.AimMode == "Toggle" then
+                State.Aimbot.Active = not State.Aimbot.Active
+                if not State.Aimbot.Active then
+                    LockedTarget = nil
+                end
+            else
+                State.Aimbot.Active = true
+            end
+        end
+    end)
+    table.insert(ActiveConnections, InputBeganConn)
+
+    local InputEndedConn = Services.UserInputService.InputEnded:Connect(function(input)
+        if IsKeyMatch(State.Aimbot.Keybind, input) then
+            if State.Aimbot.AimMode == "Hold" then
+                State.Aimbot.Active = false
                 LockedTarget = nil
             end
-        else
-            State.Aimbot.Active = true
         end
-    end
-end)
-table.insert(ActiveConnections, InputBeganConn)
+    end)
+    table.insert(ActiveConnections, InputEndedConn)
 
-local InputEndedConn = Services.UserInputService.InputEnded:Connect(function(input)
-    if IsKeyMatch(State.Aimbot.Keybind, input) then
-        if State.Aimbot.AimMode == "Hold" then
-            State.Aimbot.Active = false
-            LockedTarget = nil
+    -- Player Tracker Listeners
+    for _, player in ipairs(Services.Players:GetPlayers()) do
+        SetupEntity(player)
+    end
+
+    local PlayerAddedConn = Services.Players.PlayerAdded:Connect(function(player)
+        SetupEntity(player)
+    end)
+    table.insert(ActiveConnections, PlayerAddedConn)
+
+    local PlayerRemovingConn = Services.Players.PlayerRemoving:Connect(function(player)
+        CleanupEntity(player)
+        if RadarBlips[player] then
+            pcall(function() RadarBlips[player]:Destroy() end)
+            RadarBlips[player] = nil
         end
-    end
-end)
-table.insert(ActiveConnections, InputEndedConn)
+    end)
+    table.insert(ActiveConnections, PlayerRemovingConn)
 
--- Player Tracker Listeners
-for _, player in ipairs(Services.Players:GetPlayers()) do
-    SetupEntity(player)
+    -- Bind Camera Step after Roblox CameraModule (priority 201) to eliminate jump jitter and camera fighting
+    Services.RunService:BindToRenderStep("SaviorHubCameraStep", Enum.RenderPriority.Camera.Value + 1, StepTargeting)
+
+    -- Visuals Pipeline on RenderStepped (Zero-Lag)
+    local RenderConn = Services.RunService.RenderStepped:Connect(function()
+        StepVisuals()
+    end)
+    table.insert(ActiveConnections, RenderConn)
+
+    print("[Savior Hub] System initialized successfully. Press RightShift to toggle interface.")
 end
 
-local PlayerAddedConn = Services.Players.PlayerAdded:Connect(function(player)
-    SetupEntity(player)
-end)
-table.insert(ActiveConnections, PlayerAddedConn)
-
-local PlayerRemovingConn = Services.Players.PlayerRemoving:Connect(function(player)
-    CleanupEntity(player)
-    if RadarBlips[player] then
-        pcall(function() RadarBlips[player]:Destroy() end)
-        RadarBlips[player] = nil
+-- Authentication Gate Execution
+local isAuthed = false
+pcall(function()
+    if getgenv and getgenv().SAVIOR_AUTHENTICATED then
+        isAuthed = true
+    elseif _G.SAVIOR_AUTHENTICATED then
+        isAuthed = true
     end
 end)
-table.insert(ActiveConnections, PlayerRemovingConn)
 
--- Bind Camera Step after Roblox CameraModule (priority 201) to eliminate jump jitter and camera fighting
-Services.RunService:BindToRenderStep("SaviorHubCameraStep", Enum.RenderPriority.Camera.Value + 1, StepTargeting)
+if isAuthed then
+    InitializeClientFramework()
+else
+    ShowAuthGateway(function()
+        pcall(function()
+            if getgenv then getgenv().SAVIOR_AUTHENTICATED = true end
+            _G.SAVIOR_AUTHENTICATED = true
+        end)
+        InitializeClientFramework()
+    end)
+end
 
--- Visuals Pipeline on RenderStepped (Zero-Lag)
-local RenderConn = Services.RunService.RenderStepped:Connect(function()
-    StepVisuals()
-end)
-table.insert(ActiveConnections, RenderConn)
-
-print("[Savior Hub] System initialized successfully. Press RightShift to toggle interface.")
