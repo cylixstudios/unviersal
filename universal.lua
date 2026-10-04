@@ -2855,11 +2855,10 @@ end
 -- AUTHENTICATION GATEWAY: Savior Hub Black & White Gateway
 -- ==============================================================================
 local AuthConfig = {
-    ApiUrl = "http://127.0.0.1:8080",
+    ApiUrl = "https://supports-come-albert-skirt.trycloudflare.com",
     DiscordInvite = "https://discord.gg/saviorhub",
     GetKeyUrl = "https://discord.gg/saviorhub",
     SessionFileName = "savior_session.dat",
-    DevTestKey = "SAVIOR-DEV-TEST",
     AppTitle = "SAVIOR",
     AppSubtitle = "ACCOUNT & LICENSE GATEWAY"
 }
@@ -2927,6 +2926,16 @@ local function SaveSession(user, pass)
     end
 end
 
+local function ClearSession()
+    local delFn = delfile or (syn and syn.del_file)
+    local writeFn = writefile or (syn and syn.write_file)
+    if delFn then
+        pcall(delFn, AuthConfig.SessionFileName)
+    elseif writeFn then
+        pcall(writeFn, AuthConfig.SessionFileName, "")
+    end
+end
+
 local function LoadSession()
     local isFileFn = isfile or (syn and syn.is_file)
     local readFn = readfile or (syn and syn.read_file)
@@ -2945,16 +2954,15 @@ local function LoadSession()
     return "", ""
 end
 
+-- Active Session Token Tracking (for concurrent multi-device login invalidation)
+local currentSessionToken = nil
+
 local function SubmitLogin(username, password)
     local u = string.gsub(username or "", "^%s*(.-)%s*$", "%1")
     local p = string.gsub(password or "", "^%s*(.-)%s*$", "%1")
 
     if #u == 0 then return false, "missing_fields", "Please enter your username." end
     if #p == 0 then return false, "missing_fields", "Please enter your password." end
-
-    if (u == "dev" and p == "dev") or (AuthConfig.DevTestKey and u == "SAVIOR-DEV") then
-        return true, "success", "Developer bypass accepted."
-    end
 
     local hwid = GetClientHWID()
     local rUser = LocalPlayer and LocalPlayer.Name or "Unknown"
@@ -2972,7 +2980,7 @@ local function SubmitLogin(username, password)
 
     local raw = SafeHttpRequest(url)
     if not raw or #raw == 0 then
-        return false, "network_error", "Auth server offline. Start bot daemon on port 8080."
+        return false, "network_error", "Cannot connect to auth server (" .. tostring(AuthConfig.ApiUrl) .. "). Verify the host bot daemon is running."
     end
 
     local ok, data = pcall(function()
@@ -2987,11 +2995,16 @@ local function SubmitLogin(username, password)
     local message = data.message or "Authentication failed."
 
     if status == "success" then
+        currentSessionToken = data.session_token
         return true, "success", message, data
+    elseif status == "deleted" then
+        return false, "deleted", message or "Your linked license key has been deleted by administration! Please register with a new key."
     elseif status == "revoked" then
-        return false, "revoked", "Your linked license key has been revoked! You need a new key via Discord."
+        return false, "revoked", message or "Your linked license key has been revoked! You need a new key via Discord."
     elseif status == "expired" then
-        return false, "expired", "Your linked license has expired! You need a new key via Discord."
+        return false, "expired", message or "Your linked license has expired! You need a new key via Discord."
+    elseif status == "hwid_mismatch" then
+        return false, "hwid_mismatch", message or "Device mismatch! This account is locked to another machine."
     else
         return false, status, message
     end
@@ -3005,10 +3018,6 @@ local function SubmitRegistration(username, password, key)
     if #u < 3 then return false, "missing_fields", "Username must be at least 3 characters." end
     if #p < 4 then return false, "missing_fields", "Password must be at least 4 characters." end
     if #k == 0 then return false, "missing_fields", "Please enter your license key." end
-
-    if AuthConfig.DevTestKey and k == AuthConfig.DevTestKey then
-        return true, "success", "Developer offline key accepted."
-    end
 
     local hwid = GetClientHWID()
     local rUser = LocalPlayer and LocalPlayer.Name or "Unknown"
@@ -3027,7 +3036,7 @@ local function SubmitRegistration(username, password, key)
 
     local raw = SafeHttpRequest(url)
     if not raw or #raw == 0 then
-        return false, "network_error", "Auth server offline. (Dev key: " .. AuthConfig.DevTestKey .. ")"
+        return false, "network_error", "Cannot connect to auth server (" .. tostring(AuthConfig.ApiUrl) .. "). Verify the host bot daemon is running."
     end
 
     local ok, data = pcall(function()
@@ -3042,13 +3051,53 @@ local function SubmitRegistration(username, password, key)
     local message = data.message or "Registration failed."
 
     if status == "success" then
+        currentSessionToken = data.session_token
         return true, "success", message, data
+    elseif status == "deleted" then
+        return false, "deleted", message or "This license key does not exist or has been deleted by administration!"
     elseif status == "revoked" then
-        return false, "revoked", "This license key has been revoked! You need a new key via Discord."
+        return false, "revoked", message or "This license key has been revoked! You need a new key via Discord."
     elseif status == "expired" then
-        return false, "expired", "This license key has expired! You need a new key via Discord."
+        return false, "expired", message or "This license key has expired! You need a new key via Discord."
+    elseif status == "key_already_redeemed" then
+        return false, "key_already_redeemed", message or "This license key has already been redeemed! Each key is single-use only."
+    elseif status == "hwid_mismatch" then
+        return false, "hwid_mismatch", message or "Device mismatch! This key is locked to another machine."
     else
         return false, status, message
+    end
+end
+
+local function CheckSessionHeartbeat(username, key)
+    local hwid = GetClientHWID()
+    local rUser = LocalPlayer and LocalPlayer.Name or "Unknown"
+    local rUid = LocalPlayer and LocalPlayer.UserId or 0
+    local token = currentSessionToken or ""
+
+    local url = string.format(
+        "%s/api/heartbeat?username=%s&key=%s&hwid=%s&session_token=%s&user=%s&uid=%s",
+        AuthConfig.ApiUrl,
+        Services.HttpService:UrlEncode(username or ""),
+        Services.HttpService:UrlEncode(key or ""),
+        Services.HttpService:UrlEncode(hwid),
+        Services.HttpService:UrlEncode(token),
+        Services.HttpService:UrlEncode(rUser),
+        tostring(rUid)
+    )
+    local raw = SafeHttpRequest(url)
+    if not raw or #raw == 0 then
+        return false, "network_error", "Auth server unreachable."
+    end
+    local ok, data = pcall(function()
+        return Services.HttpService:JSONDecode(raw)
+    end)
+    if not ok or not data then
+        return false, "parse_error", "Invalid server response."
+    end
+    if data.status == "valid" then
+        return true, "valid", data.message or "Session valid"
+    else
+        return false, data.status or "error", data.message or "Session invalid"
     end
 end
 
@@ -3567,14 +3616,23 @@ local function ShowAuthGateway(onAuthenticated, onCancel)
                     task.wait(0.32)
                     pcall(function() ScreenGui:Destroy() end)
                     if onAuthenticated then
-                        onAuthenticated()
+                        onAuthenticated(u)
                     end
                 else
-                    if status == "revoked" then
-                        SetStatus("Your linked license key has been revoked! You need a new key via Discord.", Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 60, 60))
+                    if status == "deleted" then
+                        SetStatus(msg or "Your linked license key has been deleted by administration! Please register with a new key.", Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 60, 60))
+                        ClearSession()
+                        ShakeBox(Stroke)
+                    elseif status == "revoked" then
+                        SetStatus(msg or "Your linked license key has been revoked! You need a new key via Discord.", Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 60, 60))
+                        ClearSession()
                         ShakeBox(Stroke)
                     elseif status == "expired" then
-                        SetStatus("Your linked license has expired! You need a new key via Discord.", Color3.fromRGB(255, 140, 60), Color3.fromRGB(255, 140, 60))
+                        SetStatus(msg or "Your linked license has expired! You need a new key via Discord.", Color3.fromRGB(255, 140, 60), Color3.fromRGB(255, 140, 60))
+                        ClearSession()
+                        ShakeBox(Stroke)
+                    elseif status == "hwid_mismatch" then
+                        SetStatus(msg or "Device mismatch! This account is locked to another machine.", Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 60, 60))
                         ShakeBox(Stroke)
                     else
                         SetStatus(msg or "Invalid username or password.", Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 80, 80))
@@ -3618,16 +3676,28 @@ local function ShowAuthGateway(onAuthenticated, onCancel)
                     task.wait(0.32)
                     pcall(function() ScreenGui:Destroy() end)
                     if onAuthenticated then
-                        onAuthenticated()
+                        onAuthenticated(u)
                     end
                 else
-                    if status == "revoked" then
-                        SetStatus("This license key has been revoked! You need a new key via Discord.", Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 60, 60))
+                    if status == "deleted" then
+                        SetStatus(msg or "This license key does not exist or has been deleted by administration!", Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 60, 60))
+                        KeyStroke.Color = Color3.fromRGB(255, 60, 60)
+                        ShakeBox(KeyStroke)
+                    elseif status == "revoked" then
+                        SetStatus(msg or "This license key has been revoked! You need a new key via Discord.", Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 60, 60))
                         KeyStroke.Color = Color3.fromRGB(255, 60, 60)
                         ShakeBox(KeyStroke)
                     elseif status == "expired" then
-                        SetStatus("This license key has expired! You need a new key via Discord.", Color3.fromRGB(255, 140, 60), Color3.fromRGB(255, 140, 60))
+                        SetStatus(msg or "This license key has expired! You need a new key via Discord.", Color3.fromRGB(255, 140, 60), Color3.fromRGB(255, 140, 60))
                         KeyStroke.Color = Color3.fromRGB(255, 140, 60)
+                        ShakeBox(KeyStroke)
+                    elseif status == "key_already_redeemed" then
+                        SetStatus(msg or "This license key has already been redeemed! Each key is single-use only.", Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 60, 60))
+                        KeyStroke.Color = Color3.fromRGB(255, 60, 60)
+                        ShakeBox(KeyStroke)
+                    elseif status == "hwid_mismatch" then
+                        SetStatus(msg or "HWID mismatch! This key was registered on another machine.", Color3.fromRGB(255, 60, 60), Color3.fromRGB(255, 60, 60))
+                        KeyStroke.Color = Color3.fromRGB(255, 60, 60)
                         ShakeBox(KeyStroke)
                     else
                         SetStatus(msg or "Registration failed.", Color3.fromRGB(255, 80, 80), Color3.fromRGB(255, 80, 80))
@@ -3672,10 +3742,14 @@ local function ShowAuthGateway(onAuthenticated, onCancel)
     Services.TweenService:Create(Stroke, TweenInfo.new(0.35), {Transparency = 0}):Play()
 
     task.spawn(function()
-        SetAuthMode("login")
+        SetAuthMode(initialMode or "login")
         local savedU, savedP = LoadSession()
         if #savedU > 0 then UserBox.Text = savedU end
         if #savedP > 0 then PassBox.Text = savedP end
+        if initialAlert and #initialAlert > 0 then
+            SetStatus(initialAlert, Color3.fromRGB(255, 70, 70), Color3.fromRGB(255, 70, 70))
+            ShakeBox(Stroke)
+        end
     end)
 end
 
@@ -3683,9 +3757,11 @@ end
 -- INITIALIZATION & BINDINGS
 -- ==============================================================================
 
-local function InitializeClientFramework()
+local function InitializeClientFramework(authUsername)
     local isReopening = false
+    local currentAuthUser = authUsername or ""
     local GuiInstance, MainFrameInstance, PreviewFrameInstance, UnloadFn
+    local heartbeatRunning = true
 
     local function TriggerCloseAndReauth()
         if isReopening then return end
@@ -3698,8 +3774,11 @@ local function InitializeClientFramework()
             PreviewFrameInstance.Visible = false
         end
 
-        ShowAuthGateway(function()
+        ShowAuthGateway(function(newUsername)
             isReopening = false
+            if newUsername and #newUsername > 0 then
+                currentAuthUser = newUsername
+            end
             State.UI.Visible = true
             if MainFrameInstance then
                 MainFrameInstance.Visible = true
@@ -3714,6 +3793,42 @@ local function InitializeClientFramework()
 
     GuiInstance, MainFrameInstance, PreviewFrameInstance, UnloadFn = BuildSaviorInterface(TriggerCloseAndReauth)
 
+    -- Background Real-Time License Heartbeat & Revocation/Deletion Enforcer
+    task.spawn(function()
+        while heartbeatRunning do
+            task.wait(10)
+            if not heartbeatRunning then break end
+
+            if currentAuthUser and #currentAuthUser > 0 then
+                local valid, status, msg = CheckSessionHeartbeat(currentAuthUser)
+                if not valid and (status == "deleted" or status == "revoked" or status == "expired" or status == "hwid_mismatch" or status == "session_replaced") then
+                    heartbeatRunning = false
+                    getgenv().SAVIOR_AUTHENTICATED = false
+                    _G.SAVIOR_AUTHENTICATED = false
+                    currentSessionToken = nil
+                    ClearSession()
+
+                    if UnloadFn then
+                        pcall(UnloadFn)
+                    end
+
+                    local alertMsg = (status == "deleted" and "SESSION TERMINATED: Your license key was deleted by administration! Enter a new key.")
+                        or (status == "revoked" and "SESSION TERMINATED: Your license key was revoked by administration! You need a new key via Discord.")
+                        or (status == "expired" and "SESSION TERMINATED: Your license has expired! Run /getkey in Discord.")
+                        or (status == "hwid_mismatch" and "SESSION TERMINATED: Hardware mismatch detected!")
+                        or (status == "session_replaced" and "SESSION TERMINATED: Your account was logged in from another device/session!")
+                        or "SESSION TERMINATED: License validation failed."
+
+                    local mode = (status == "deleted") and "signup" or "login"
+                    ShowAuthGateway(function(reAuthUser)
+                        InitializeClientFramework(reAuthUser)
+                    end, nil, mode, alertMsg)
+                    break
+                end
+            end
+        end
+    end)
+
     -- Visibility / Menu Keybind (Requires re-authentication on every close/reopen)
     local InputBeganConn = Services.UserInputService.InputBegan:Connect(function(input, processed)
         if not processed then
@@ -3722,13 +3837,13 @@ local function InitializeClientFramework()
                 local authGui = guiParent and guiParent:FindFirstChild("SaviorAuthGatewayScreen")
 
                 if authGui then
-                    pcall(function() authGui:Destroy() end)
-                    isReopening = false
+                    -- Auth gateway is currently displayed; do not allow closing without credentials
                 else
                     TriggerCloseAndReauth()
                 end
             end
             if State.UI.UnloadBind ~= Enum.KeyCode.Unknown and input.KeyCode == State.UI.UnloadBind then
+                heartbeatRunning = false
                 UnloadFn()
             end
         end
@@ -3789,10 +3904,10 @@ local function InitializeClientFramework()
 end
 
 -- Present Authentication Screen on Initial Load
-ShowAuthGateway(function()
+ShowAuthGateway(function(authUsername)
     getgenv().SAVIOR_AUTHENTICATED = true
     _G.SAVIOR_AUTHENTICATED = true
-    InitializeClientFramework()
+    InitializeClientFramework(authUsername)
 end)
 
 
