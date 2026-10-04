@@ -2855,7 +2855,7 @@ end
 -- AUTHENTICATION GATEWAY: Savior Hub Black & White Gateway
 -- ==============================================================================
 local AuthConfig = {
-    ApiUrl = "https://supports-come-albert-skirt.trycloudflare.com",
+    ApiUrl = "https://pour-navigation-tex-bloomberg.trycloudflare.com",
     DiscordInvite = "https://discord.gg/saviorhub",
     GetKeyUrl = "https://discord.gg/saviorhub",
     SessionFileName = "savior_session.dat",
@@ -3715,7 +3715,7 @@ local function ShowAuthGateway(onAuthenticated, onCancel)
 
     GetKeyBtn.MouseButton1Click:Connect(function()
         if SafeSetClipboard(AuthConfig.GetKeyUrl or AuthConfig.DiscordInvite) then
-            SetStatus("Key link copied to clipboard! Run /getkey in Discord.", Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 255, 255))
+            SetStatus("Discord link copied to clipboard! Request a license key in Discord.", Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 255, 255))
         else
             SetStatus("Discord: " .. AuthConfig.DiscordInvite, Color3.fromRGB(255, 255, 255), Color3.fromRGB(255, 255, 255))
         end
@@ -3814,7 +3814,7 @@ local function InitializeClientFramework(authUsername)
 
                     local alertMsg = (status == "deleted" and "SESSION TERMINATED: Your license key was deleted by administration! Enter a new key.")
                         or (status == "revoked" and "SESSION TERMINATED: Your license key was revoked by administration! You need a new key via Discord.")
-                        or (status == "expired" and "SESSION TERMINATED: Your license has expired! Run /getkey in Discord.")
+                        or (status == "expired" and "SESSION TERMINATED: Your license has expired! Please contact administration for renewal.")
                         or (status == "hwid_mismatch" and "SESSION TERMINATED: Hardware mismatch detected!")
                         or (status == "session_replaced" and "SESSION TERMINATED: Your account was logged in from another device/session!")
                         or "SESSION TERMINATED: License validation failed."
