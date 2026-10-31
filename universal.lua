@@ -745,7 +745,9 @@ end
 local ActiveConnections = {}
 
 local function BuildSaviorInterface(closeCallback)
-    local guiParent = Services.CoreGui or LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    local guiParent = (typeof(gethui) == "function" and gethui())
+        or (pcall(function() return game:GetService("CoreGui") end) and game:GetService("CoreGui"))
+        or LocalPlayer:FindFirstChildOfClass("PlayerGui")
 
     local existingGui = guiParent:FindFirstChild("SaviorHubScreen")
     if existingGui then existingGui:Destroy() end
