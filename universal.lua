@@ -3763,35 +3763,18 @@ local function InitializeClientFramework(authUsername)
     local GuiInstance, MainFrameInstance, PreviewFrameInstance, UnloadFn
     local heartbeatRunning = true
 
-    local function TriggerCloseAndReauth()
-        if isReopening then return end
-        isReopening = true
-        State.UI.Visible = false
+    local function TriggerToggleUI()
+        local newVisible = not State.UI.Visible
+        State.UI.Visible = newVisible
         if MainFrameInstance then
-            MainFrameInstance.Visible = false
+            MainFrameInstance.Visible = newVisible
         end
         if PreviewFrameInstance then
-            PreviewFrameInstance.Visible = false
+            PreviewFrameInstance.Visible = newVisible and State.ESP.Enabled
         end
-
-        ShowAuthGateway(function(newUsername)
-            isReopening = false
-            if newUsername and #newUsername > 0 then
-                currentAuthUser = newUsername
-            end
-            State.UI.Visible = true
-            if MainFrameInstance then
-                MainFrameInstance.Visible = true
-            end
-            if PreviewFrameInstance then
-                PreviewFrameInstance.Visible = State.ESP.Enabled
-            end
-        end, function()
-            isReopening = false
-        end)
     end
 
-    GuiInstance, MainFrameInstance, PreviewFrameInstance, UnloadFn = BuildSaviorInterface(TriggerCloseAndReauth)
+    GuiInstance, MainFrameInstance, PreviewFrameInstance, UnloadFn = BuildSaviorInterface(TriggerToggleUI)
 
     -- Background Real-Time License Heartbeat & Revocation/Deletion Enforcer
     task.spawn(function()
@@ -3807,9 +3790,7 @@ local function InitializeClientFramework(authUsername)
     local InputBeganConn = Services.UserInputService.InputBegan:Connect(function(input, processed)
         if not processed then
             if input.KeyCode == State.UI.ToggleKey then
-                if MainFrameInstance then
-                    MainFrameInstance.Visible = not MainFrameInstance.Visible
-                end
+                TriggerToggleUI()
             end
             if State.UI.UnloadBind ~= Enum.KeyCode.Unknown and input.KeyCode == State.UI.UnloadBind then
                 heartbeatRunning = false
