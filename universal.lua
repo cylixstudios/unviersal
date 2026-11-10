@@ -916,46 +916,7 @@ local function BuildSaviorInterface(closeCallback)
     InnerCorner.Parent = InnerBackground
 
     -- Top-Right Window Close Button ("X" triggers re-authentication prompt)
-    local WinCloseBtn = Instance.new("TextButton")
-    WinCloseBtn.Name = "WinCloseBtn"
-    WinCloseBtn.Size = UDim2.new(0, 24, 0, 24)
-    WinCloseBtn.Position = UDim2.new(1, -34, 0, 12)
-    WinCloseBtn.BackgroundColor3 = Color3.fromRGB(16, 16, 16)
-    WinCloseBtn.BorderSizePixel = 0
-    WinCloseBtn.Text = "X"
-    WinCloseBtn.Font = Enum.Font.GothamBold
-    WinCloseBtn.TextSize = 11
-    WinCloseBtn.TextColor3 = Color3.fromRGB(140, 140, 140)
-    WinCloseBtn.AutoButtonColor = false
-    WinCloseBtn.ZIndex = 15
-    WinCloseBtn.Parent = InnerBackground
-
-    local WinCloseCorner = Instance.new("UICorner")
-    WinCloseCorner.CornerRadius = UDim.new(0, 6)
-    WinCloseCorner.Parent = WinCloseBtn
-
-    local WinCloseStroke = Instance.new("UIStroke")
-    WinCloseStroke.Color = Color3.fromRGB(36, 36, 36)
-    WinCloseStroke.Thickness = 1
-    WinCloseStroke.Parent = WinCloseBtn
-
-    WinCloseBtn.MouseEnter:Connect(function()
-        Services.TweenService:Create(WinCloseBtn, TweenInfo.new(0.18), {
-            BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-            TextColor3 = Color3.fromRGB(0, 0, 0)
-        }):Play()
-    end)
-    WinCloseBtn.MouseLeave:Connect(function()
-        Services.TweenService:Create(WinCloseBtn, TweenInfo.new(0.18), {
-            BackgroundColor3 = Color3.fromRGB(16, 16, 16),
-            TextColor3 = Color3.fromRGB(140, 140, 140)
-        }):Play()
-    end)
-    WinCloseBtn.MouseButton1Click:Connect(function()
-        if closeCallback then
-            closeCallback()
-        end
-    end)
+    -- X button removed
 
     -- Dragging Logic
     local dragging = false
@@ -1783,7 +1744,11 @@ local function BuildSaviorInterface(closeCallback)
         end)
     end
 
-    -- ==============================================================================
+    -- ESP Preview removed
+    local PreviewFrame = nil
+    local function RefreshPreview() end
+    local function TogglePreview() end
+    if false then -- ==============================================================================
     -- LIVE VISUALS PREVIEW WINDOW (Pop-Out Spaced Connected Box)
     -- ==============================================================================
 
@@ -2003,31 +1968,7 @@ local function BuildSaviorInterface(closeCallback)
         -- 3D mannequin model removed; showcase elements dynamically update below
     end
 
-    local function TogglePreview(visible)
-        if visible then
-            PreviewFrame.Visible = true
-            RefreshPreview()
-            Services.TweenService:Create(PreviewFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                Position = UDim2.new(MainFrame.Position.X.Scale, MainFrame.Position.X.Offset + 734, MainFrame.Position.Y.Scale, MainFrame.Position.Y.Offset)
-            }):Play()
-        else
-            PreviewFrame.Visible = false
-        end
-    end
-
-    Services.RunService.RenderStepped:Connect(function()
-        if PreviewFrame.Visible then
-            PreviewFrame.Position = UDim2.new(
-                MainFrame.Position.X.Scale,
-                MainFrame.Position.X.Offset + 734,
-                MainFrame.Position.Y.Scale,
-                MainFrame.Position.Y.Offset
-            )
-            if State.ESP.Rainbow then
-                RefreshPreview()
-            end
-        end
-    end)
+    end -- end of removed preview block
 
     -- ==============================================================================
     -- TAB 1: MAIN PAGE (Aimbot Controls & ESP Visuals)
@@ -2848,12 +2789,18 @@ local function BuildSaviorInterface(closeCallback)
     UnloadExecBtn.MouseButton1Click:Connect(UnloadSystem)
 
     ScreenGui.Parent = guiParent
-    return ScreenGui, MainFrame, PreviewFrame, UnloadSystem
+    return ScreenGui, MainFrame, nil, UnloadSystem
 end
 
 -- ==============================================================================
--- AUTHENTICATION GATEWAY: Savior Hub Black & White Gateway
+-- AUTHENTICATION GATEWAY: removed
 -- ==============================================================================
+local function ShowAuthGateway() end
+local function CheckSessionHeartbeat() return true end
+local function SaveSession() end
+local function ClearSession() end
+local function LoadSession() return "", "" end
+if false then -- auth code disabled
 local AuthConfig = {
     ApiUrl = "https://winners-symptoms-puerto-lit.trycloudflare.com",
     DiscordInvite = "https://discord.gg/saviorhub",
@@ -3752,6 +3699,8 @@ local function ShowAuthGateway(onAuthenticated, onCancel)
         end
     end)
 end
+
+end -- auth code disabled
 
 -- ==============================================================================
 -- INITIALIZATION & BINDINGS
